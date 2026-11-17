@@ -16,4 +16,11 @@
 //  };
 // ------------------------------------------------------------------
 
-export const firebaseConfig = null;
+export const firebaseConfig = {
+  apiKey: "AIzaSyDcuDZYgdvoYY16cb_EnBIz_l6zHdhIp1s",
+  authDomain: "our-home-ba5e2.firebaseapp.com",
+  projectId: "our-home-ba5e2",
+  storageBucket: "our-home-ba5e2.firebasestorage.app",
+  messagingSenderId: "646280220280",
+  appId: "1:646280220280:web:f0b58e0a3fffe2dde1a78d"
+};
