@@ -47,10 +47,17 @@ class LocalStore {
     this.persist();
   }
   async remove(col, id) { delete this.data[col][id]; this.persist(); }
+  async restore(col, id, data) { this.data[col][id] = { ...data }; this.persist(); }
   async setSettings(patch) {
     this.data.settings = { ...this.data.settings, ...patch };
     this.persist();
   }
+  async putFile(id, dataUrl) {
+    try { localStorage.setItem('ourhome-file-' + id, dataUrl); }
+    catch (e) { throw new Error('not enough space on this phone in demo mode'); }
+  }
+  async getFile(id) { return localStorage.getItem('ourhome-file-' + id); }
+  async deleteFile(id) { localStorage.removeItem('ourhome-file-' + id); }
 }
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
@@ -144,6 +151,35 @@ class FirebaseStore {
   }
   async remove(col, id) {
     this.write(this.fs.deleteDoc(this.fs.doc(this.home(), col, id)));
+  }
+  async restore(col, id, data) {
+    this.write(this.fs.setDoc(this.fs.doc(this.home(), col, id), data));
+  }
+  // Files are stored in pieces (Firestore documents are limited to 1 MB each).
+  async putFile(id, dataUrl) {
+    const SIZE = 900000;
+    const n = Math.ceil(dataUrl.length / SIZE);
+    const writes = [];
+    for (let i = 0; i < n; i++) {
+      writes.push(this.fs.setDoc(this.fs.doc(this.home(), 'filechunks', `${id}_${i}`),
+        { fileId: id, i, n, data: dataUrl.slice(i * SIZE, (i + 1) * SIZE) }));
+    }
+    // wait until saved locally; it syncs to the cloud in the background
+    await Promise.race([Promise.all(writes), new Promise(r => setTimeout(r, 1500))]);
+  }
+  async chunks(id) {
+    const { collection, query, where, getDocs } = this.fs;
+    const snap = await getDocs(query(collection(this.home(), 'filechunks'), where('fileId', '==', id)));
+    return snap.docs.map(d => ({ ref: d.ref, ...d.data() })).sort((a, b) => a.i - b.i);
+  }
+  async getFile(id) {
+    const parts = await this.chunks(id);
+    if (!parts.length || parts.length !== parts[0].n) return null;
+    return parts.map(p => p.data).join('');
+  }
+  async deleteFile(id) {
+    const parts = await this.chunks(id);
+    parts.forEach(p => this.write(this.fs.deleteDoc(p.ref)));
   }
   async setSettings(patch) {
     this.write(this.fs.setDoc(this.fs.doc(this.home(), 'meta', 'settings'), patch, { merge: true }));

@@ -38,6 +38,7 @@ const SOURCES = [
   { id: 'buy', label: 'Buying it', icon: '🛍️' },
   { id: 'secondhand', label: 'Second-hand', icon: '♻️' },
   { id: 'gift', label: 'Gift', icon: '🎁' },
+  { id: 'owned', label: 'Already have it', icon: '📦' },
 ];
 
 // Minimal line icons (24×24, drawn with the current text color)
@@ -70,6 +71,25 @@ const PETS = [
 ];
 const petArt = (type, size = 24) => svg((PETS.find(p => p.id === type) || PETS[PETS.length - 1]).art, size);
 
+const PRIORITIES = [
+  { v: 'high', label: 'High', rank: 0 },
+  { v: 'normal', label: 'Normal', rank: 1 },
+  { v: 'low', label: 'Low', rank: 2 },
+];
+const prioRank = p => (PRIORITIES.find(x => x.v === p) || PRIORITIES[1]).rank;
+
+const CURRENCIES = [
+  { v: 'ILS', sym: '₪', label: '₪ Israeli shekel' },
+  { v: 'USD', sym: '$', label: '$ US dollar' },
+  { v: 'EUR', sym: '€', label: '€ Euro' },
+  { v: 'GBP', sym: '£', label: '£ British pound' },
+  { v: 'CAD', sym: 'C$', label: 'C$ Canadian dollar' },
+  { v: 'AUD', sym: 'A$', label: 'A$ Australian dollar' },
+  { v: 'CHF', sym: 'CHF ', label: 'CHF Swiss franc' },
+  { v: 'JPY', sym: '¥', label: '¥ Japanese yen' },
+];
+const cur = () => (CURRENCIES.find(c => c.v === ((S && S.settings && S.settings.currency) || 'ILS')) || CURRENCIES[0]).sym.trim();
+
 const TABS = [
   { id: 'money', label: 'Money' },
   { id: 'bills', label: 'Bills' },
@@ -93,7 +113,7 @@ const app = document.getElementById('app');
 //  Helpers
 // ================================================================
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const money = n => '₪' + (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const money = n => (CURRENCIES.find(c => c.v === ((S && S.settings && S.settings.currency) || 'ILS')) || CURRENCIES[0]).sym + (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 const today = () => new Date().toLocaleDateString('en-CA');
 const monthKey = d => (d || '').slice(0, 7);
 const parseDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -116,14 +136,18 @@ function cfg() {
   };
 }
 const nm = p => cfg().names[p] || p;
+const device = () => localStorage.getItem('ourhome-device');            // which person uses this phone
+const defPayer = () => device() || defPayer();
+const ownerLabel = o => o === 'both' ? 'Both' : o === 'none' ? 'Undecided' : nm(o);
 const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
 
-function toast(msg) {
+function toast(msg, undo = null) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.innerHTML = esc(msg) + (undo ? ' <button class="undo">Undo</button>' : '');
   t.classList.remove('hidden');
+  if (undo) t.querySelector('.undo').onclick = () => { undo(); t.classList.add('hidden'); };
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.add('hidden'), 2600);
+  toast._t = setTimeout(() => t.classList.add('hidden'), undo ? 5000 : 2600);
 }
 
 function applyTheme() {
@@ -226,17 +250,18 @@ function tabBtn(t) {
 
 // ---------------- Money ----------------
 function renderMoney() {
-  const { netA, paid } = balance();
+  const { netA } = balance();
   let hero;
   if (Math.abs(netA) < 0.01) {
     hero = `<div class="card hero even"><div class="big">All even 🎉</div><div class="sub">Nobody owes anybody</div></div>`;
   } else {
     const to = netA > 0 ? 'a' : 'b';
     const from = netA > 0 ? 'b' : 'a';
-    hero = `<div class="card hero">
-      <div class="label">${esc(nm(to))} is owed</div>
+    const me = device();
+    const tone = !me ? '' : me === to ? 'pos' : 'neg';      // green if this phone's person is owed, red if they owe
+    hero = `<div class="card hero ${tone}">
+      <div class="label">${esc(nm(from))} owes ${esc(nm(to))}</div>
       <div class="big">${money(Math.abs(netA))}</div>
-      <div class="sub">${esc(nm(from))} pays ${esc(nm(to))}</div>
       <div class="btn-row"><button class="btn ghost" data-act="settle">✓ We settled with a transfer</button></div>
     </div>`;
   }
@@ -248,20 +273,17 @@ function renderMoney() {
   const list = Object.keys(groups).length ? Object.entries(groups).map(([k, items]) => {
     const total = items.filter(e => e.type !== 'transfer').reduce((s, e) => s + (+e.amount || 0), 0);
     return `<div class="month"><span>${fmtMonth(k)}</span><span>${money(total)}</span></div>
-      <div class="list">${items.map(expenseRow).join('')}</div>`;
+      <div class="list">${items.map(e => swipeable('expenses', e.id, expenseRow(e))).join('')}</div>`;
   }).join('') : `<div class="empty">No expenses yet.<br>Tap the <b>+</b> button below to add one.</div>`;
 
   return `
     ${hero}
-    <div class="card">
-      <h2>Paid so far</h2>
-      <div class="split2">
-        <div class="stat"><div class="n">${money(paid.a)}</div><div class="t">${esc(nm('a'))}</div></div>
-        <div class="stat"><div class="n">${money(paid.b)}</div><div class="t">${esc(nm('b'))}</div></div>
-      </div>
-    </div>
     ${list}`;
 }
+
+// Wrap a row so it can be swiped left to delete
+const swipeable = (col, id, html) =>
+  `<div class="swipe" data-col="${col}" data-id="${id}"><button class="swipe-del" data-act="swipe-delete" data-col="${col}" data-id="${id}">Delete</button><div class="swipe-row">${html}</div></div>`;
 
 function splitLabel(e) {
   const a = e.splitA ?? 50;
@@ -303,7 +325,7 @@ function renderBills() {
         <div class="sub">${paidN === totalN ? 'All done this month 🎉' : `${dueN} still to pay`}</div>
       </div>`;
 
-  const rows = st.map(({ b, s }) => `
+  const rows = st.map(({ b, s }) => swipeable('bills', b.id, `
     <div class="bill-row">
       <button class="open" data-act="edit-bill" data-id="${b.id}">
         <span class="ico" style="width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:21px;background:var(--c-soft);flex:none">${b.icon || '🧾'}</span>
@@ -318,7 +340,7 @@ function renderBills() {
       ${s.state === 'paid'
         ? `<button class="paid-btn done" data-act="pay-bill" data-id="${b.id}">✓ Paid</button>`
         : `<button class="paid-btn" data-act="pay-bill" data-id="${b.id}">I paid</button>`}
-    </div>`).join('');
+    </div>`)).join('');
 
   return `${hero}
     <div class="list">${rows || '<div class="empty">No bills yet</div>'}</div>
@@ -395,15 +417,14 @@ function listHead(L) {
 
 function itemRow(i) {
   const src = SOURCES.find(s => s.id === i.source) || SOURCES[0];
-  const who = i.owner === 'both' ? 'Both' : nm(i.owner);
-  const bits = [src.label, who];
+  const bits = [src.label, ownerLabel(i.owner)];
   if (i.approx) bits.push('~' + money(i.approx));
   if (i.arrived) bits.push('arrived ' + fmtDate(i.arrivedAt));
   else if (i.eta) bits.push('arrives ' + fmtDate(i.eta));
   return `<div class="row ${i.arrived ? 'done' : ''}" style="padding:10px 16px">
     <button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Arrived">${i.arrived ? '✓' : ''}</button>
     <button class="main" style="text-align:left" data-act="edit-item" data-id="${i.id}">
-      <div class="title">${esc(i.name)}</div>
+      <div class="title">${i.priority === 'high' && !i.arrived ? '<span class="prio high">High</span>' : ''}${i.priority === 'low' && !i.arrived ? '<span class="prio low">Low</span>' : ''}${esc(i.name)}</div>
       <div class="meta">${esc(bits.join(' · '))}</div>
     </button>
   </div>`;
@@ -411,7 +432,7 @@ function itemRow(i) {
 
 function renderItemList(L) {
   const items = S.items.filter(i => listOf(i) === L.id);
-  const pending = items.filter(i => !i.arrived).sort((x, y) => (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
+  const pending = items.filter(i => !i.arrived).sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
   const arrived = items.filter(i => i.arrived).sort((x, y) => (y.arrivedAt || '').localeCompare(x.arrivedAt || ''));
   const st = listStats(L.id);
   const summary = L.kind === 'project' && st.total ? `<div class="card">
@@ -423,10 +444,10 @@ function renderItemList(L) {
     </div>` : '';
   return `${listHead(L)}${summary}
     ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${st.approx ? '~' + money(st.approx) : ''}</span></div>
-      <div class="list">${pending.map(itemRow).join('')}</div>`
+      <div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>`
       : `<div class="empty">${items.length ? 'Everything is here 🎉' : 'Nothing here yet.'}<br>Tap <b>+</b> to add something.</div>`}
     ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
-      ${showArrived ? `<div class="list">${arrived.map(itemRow).join('')}</div>` : ''}` : ''}`;
+      ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}`;
 }
 
 function renderGrocery(L) {
@@ -443,10 +464,94 @@ function renderGrocery(L) {
       <input name="q" placeholder="Add an item, e.g. Milk" enterkeyhint="done">
       <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
     </form>
-    ${toGet.length ? `<div class="list">${toGet.map(row).join('')}</div>` : `<div class="empty">${items.length ? 'Everything is in the cart 🎉' : 'Type above to add things.'}</div>`}
+    ${toGet.length ? `<div class="list">${toGet.map(i => swipeable('items', i.id, row(i))).join('')}</div>` : `<div class="empty">${items.length ? 'Everything is in the cart 🎉' : 'Type above to add things.'}</div>`}
     ${got.length ? `<div class="month"><span>In the cart (${got.length})</span></div>
-      <div class="list">${got.map(row).join('')}</div>
+      <div class="list">${got.map(i => swipeable('items', i.id, row(i))).join('')}</div>
       <div class="btn-row"><button class="btn" data-act="done-shopping" data-id="${L.id}">Done shopping</button></div>` : ''}`;
+}
+
+// ---------------- Contract documents ----------------
+const contractFiles = () => (S.settings.contractFiles || []);
+const fmtSize = n => n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB';
+
+function filesCard() {
+  const files = contractFiles();
+  return `<div class="card">
+    <h2>Documents</h2>
+    ${files.length ? `<div class="files">${files.map(f => `
+      <div class="file">
+        <button class="file-open" data-act="open-file" data-id="${f.id}">
+          <span class="ico">${svg(ICONS.contract)}</span>
+          <span class="main"><div class="title">${esc(f.name)}</div><div class="meta">${fmtSize(f.size)} · added ${fmtDate(f.added)}</div></span>
+        </button>
+        <button class="icon-btn" data-act="delete-file" data-id="${f.id}" aria-label="Delete">${svg(ICONS.close, 20)}</button>
+      </div>`).join('')}</div>` : `<p class="hint" style="margin:0 0 12px;color:var(--muted)">Keep a copy of the signed contract here: a PDF, or photos of the pages.</p>`}
+    <label class="btn ghost upload">${svg(ICONS.plus, 20)} Upload contract
+      <input type="file" id="file-input" accept="application/pdf,image/*" multiple hidden></label>
+  </div>`;
+}
+
+const readAsDataURL = file => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+
+// Photos are shrunk before upload so they stay small; PDFs are kept as they are.
+async function shrinkImage(file) {
+  const url = await readAsDataURL(file);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85);
+}
+
+async function uploadFiles(list) {
+  for (const file of list) {
+    if (file.size > 15e6) { toast(`${file.name} is too big (max 15 MB)`); continue; }
+    toast(`Uploading ${file.name}…`);
+    try {
+      const isImg = file.type.startsWith('image/');
+      const dataUrl = isImg ? await shrinkImage(file) : await readAsDataURL(file);
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const name = isImg ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : file.name;
+      await store.putFile(id, dataUrl);
+      const meta = { id, name, type: isImg ? 'image/jpeg' : (file.type || 'application/pdf'), size: Math.round(dataUrl.length * 0.75), added: today() };
+      store.setSettings({ contractFiles: [...contractFiles(), meta] });
+      toast('Uploaded ✓');
+    } catch (err) {
+      toast('Upload failed: ' + (err.message || err));
+    }
+  }
+}
+
+const fileCache = {};
+async function openFile(f) {
+  openSheet(`<h3>${esc(f.name)}</h3><div class="empty">Loading…</div>`);
+  try {
+    const dataUrl = fileCache[f.id] || (fileCache[f.id] = await store.getFile(f.id));
+    if (!dataUrl) throw new Error('file not found');
+    const blob = await (await fetch(dataUrl)).blob();
+    const url = URL.createObjectURL(blob);
+    const file = new File([blob], f.name, { type: f.type });
+    const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+    openSheet(`
+      <h3>${esc(f.name)}</h3>
+      ${f.type.startsWith('image/') ? `<img class="doc-img" src="${url}" alt="">` : `<iframe class="doc-frame" src="${url}" title="${esc(f.name)}"></iframe>`}
+      <div class="btn-row">
+        ${canShare ? `<button class="btn" data-sheet="share">Open / Save</button>` : `<a class="btn" href="${url}" download="${esc(f.name)}" target="_blank" rel="noopener">Open / Save</a>`}
+        <button class="btn light" data-sheet="close">Close</button>
+      </div>`, {
+      share: () => navigator.share({ files: [file], title: f.name }).catch(() => {}),
+    });
+  } catch (err) {
+    openSheet(`<h3>${esc(f.name)}</h3><div class="empty">Couldn't open it: ${esc(err.message || err)}</div><button class="btn light" data-sheet="close">Close</button>`);
+  }
+}
+
+function deleteFile(f) {
+  if (!confirm(`Delete “${f.name}”?`)) return;
+  store.setSettings({ contractFiles: contractFiles().filter(x => x.id !== f.id) });
+  store.deleteFile(f.id);
+  toast('Deleted');
 }
 
 // ---------------- Contract ----------------
@@ -459,7 +564,8 @@ function renderContract() {
         <div class="label">No contract details yet</div>
         <div class="sub">Add your lease dates and deposit, and the app will remind you a month before you need to tell the landlord.</div>
       </div>
-      <button class="btn big" data-act="edit-contract">Add contract details</button>`;
+      <button class="btn big" data-act="edit-contract">Add contract details</button>
+      ${filesCard()}`;
   }
   const depositType = { cash: 'Cash', check: 'Check', guarantee: 'Bank guarantee', other: 'Other' }[c.depositType] || '';
   return `
@@ -486,6 +592,7 @@ function renderContract() {
       </dl>
       ${c.notes ? `<p style="margin:14px 0 0;color:var(--muted);white-space:pre-wrap">${esc(c.notes)}</p>` : ''}
     </div>
+    ${filesCard()}
     ${ci ? `<button class="btn ghost big" data-act="ics">📅 Add reminder to my phone's calendar</button>` : ''}
     <button class="btn light" data-act="edit-contract">Edit contract details</button>`;
 }
@@ -594,11 +701,11 @@ function splitChoice(a) { return a === 50 ? '50' : a === 100 ? 'a' : a === 0 ? '
 
 function expenseForm(e = null) {
   if (e && e.type === 'transfer') return transferForm(e);
-  const x = e || { amount: '', category: 'groceries', paidBy: localStorage.getItem('ourhome-me') || 'a', date: today(), splitA: 50, note: '' };
+  const x = e || { amount: '', category: 'groceries', paidBy: defPayer(), date: today(), splitA: 50, note: '' };
   const sc = splitChoice(x.splitA ?? 50);
   openSheet(`
     <h3>${e ? 'Edit expense' : 'Add expense'}</h3>
-    <div class="field"><label>How much? (₪)</label>
+    <div class="field"><label>How much? (${cur()})</label>
       <input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${esc(x.amount)}" ${e ? '' : 'autofocus'}></div>
     <div class="field"><span class="lbl">What for?</span>
       ${chips('category', CATEGORIES.map(c => ({ v: c.id, label: c.icon + ' ' + c.label })), x.category)}
@@ -637,6 +744,22 @@ function expenseForm(e = null) {
   });
 }
 
+function swipeDelete(col, id) {
+  const obj = S[col].find(x => x.id === id);
+  if (!obj) return;
+  const { id: _, ...data } = obj;
+  if (col === 'expenses') {
+    deleteExpense(obj);
+    toast('Expense deleted', () => {
+      store.restore('expenses', id, data);
+      if (obj.billId && S.bills.find(b => b.id === obj.billId)) store.update('bills', obj.billId, { lastPaid: obj.date });
+    });
+  } else {
+    store.remove(col, id);
+    toast(`“${obj.name}” deleted`, () => store.restore(col, id, data));
+  }
+}
+
 function deleteExpense(e) {
   store.remove('expenses', e.id);
   // If it came from a bill, put the bill's "last paid" back.
@@ -651,7 +774,7 @@ function deleteExpense(e) {
 function transferForm(e) {
   openSheet(`
     <h3>Transfer</h3>
-    <div class="field"><label>Amount (₪)</label><input class="amount" name="amount" inputmode="decimal" value="${esc(e.amount)}"></div>
+    <div class="field"><label>Amount (${cur()})</label><input class="amount" name="amount" inputmode="decimal" value="${esc(e.amount)}"></div>
     <div class="field"><span class="lbl">Who sent it?</span>${chips('from', people(), e.from)}</div>
     <div class="field"><label>When?</label><input type="date" name="date" value="${esc(e.date)}"></div>
     <button class="btn" data-sheet="save">Save changes</button>
@@ -693,11 +816,11 @@ function settleForm() {
 // ---------------- Bill forms ----------------
 function payBillForm(b) {
   const s = billStatus(b);
-  const defaultPayer = b.owner === 'a' || b.owner === 'b' ? b.owner : (localStorage.getItem('ourhome-me') || 'a');
+  const defaultPayer = b.owner === 'a' || b.owner === 'b' ? b.owner : (defPayer());
   openSheet(`
     <h3>${b.icon || '🧾'} ${esc(b.name)}</h3>
     ${s.state === 'paid' ? `<div class="banner">Already marked paid this month (${fmtDate(b.lastPaid)}). Paying again adds another expense.</div>` : ''}
-    <div class="field"><label>Amount paid (₪)</label>
+    <div class="field"><label>Amount paid (${cur()})</label>
       <input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${b.amount || ''}" autofocus></div>
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), defaultPayer)}</div>
     <div class="field"><label>When?</label><input type="date" name="date" value="${today()}"></div>
@@ -722,7 +845,7 @@ function billForm(b = null) {
     <h3>${b ? 'Edit bill' : 'New bill'}</h3>
     <div class="field"><label>Name</label><input name="name" value="${esc(x.name)}" placeholder="e.g. Netflix, Insurance" ${b ? '' : 'autofocus'}></div>
     <div class="field"><span class="lbl">How often?</span>${chips('freq', FREQS.map(f => ({ v: f.v, label: f.label })), x.freq)}</div>
-    <div class="field"><label>About how much? (₪)</label><input name="amount" inputmode="decimal" value="${esc(x.amount || '')}" placeholder="0"></div>
+    <div class="field"><label>About how much? (${cur()})</label><input name="amount" inputmode="decimal" value="${esc(x.amount || '')}" placeholder="0"></div>
     <div class="field"><span class="lbl">Whose bill?</span>${chips('owner', [{ v: 'shared', label: 'Shared' }, ...people()], x.owner)}</div>
     ${b ? `<div class="field"><label>Last paid</label><input type="date" name="lastPaid" value="${esc(x.lastPaid || '')}"></div>` : ''}
     <button class="btn" data-sheet="save">${b ? 'Save' : 'Add bill'}</button>
@@ -782,18 +905,17 @@ function listForm(L = null, kind = L?.kind) {
 
 function itemForm(i = null, listId = null) {
   const lid = i ? listOf(i) : (listId || (currentList()?.kind !== 'grocery' && currentList()?.id) || 'home');
-  const x = i || { name: '', approx: '', owner: localStorage.getItem('ourhome-me') || 'a', source: 'buy', eta: '' };
+  const x = i || { name: '', approx: '', owner: defPayer(), source: 'buy', eta: '', priority: 'normal' };
   const projects = sortedLists('project');
   openSheet(`
     <h3>${i ? 'Edit item' : 'What do we need?'}</h3>
     <div class="field"><input name="name" value="${esc(x.name)}" placeholder="e.g. Sofa, cat tree, curtains" ${i ? '' : 'autofocus'}></div>
     ${projects.length ? `<div class="field"><span class="lbl">For</span>${chips('listId', [{ v: 'home', label: 'Home' }, ...projects.map(p => ({ v: p.id, label: esc(p.name) }))], lid)}</div>` : ''}
     <div class="field"><span class="lbl">Where from?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
-    <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }], x.owner)}</div>
-    <div class="split2">
-      <div class="field"><label>About how much? (₪)</label><input name="approx" inputmode="decimal" value="${esc(x.approx || '')}" placeholder="0"></div>
-      <div class="field"><label>Arrives (optional)</label><input type="date" name="eta" value="${esc(x.eta || '')}"></div>
-    </div>
+    <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], x.owner)}</div>
+    <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
+    <div class="field"><label>About how much? (${cur()})</label><input name="approx" inputmode="decimal" value="${esc(x.approx || '')}" placeholder="0"></div>
+    <div class="field"><label>When does it arrive? (optional)</label><input type="date" name="eta" value="${esc(x.eta || '')}"></div>
     <button class="btn" data-sheet="save">${i ? 'Save' : 'Add to list'}</button>
     ${i ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
@@ -801,7 +923,7 @@ function itemForm(i = null, listId = null) {
       const name = val('name');
       if (!name) return toast('What do we need?');
       const chosen = chipVal('listId') || lid;
-      const data = { name, source: chipVal('source'), owner: chipVal('owner'), approx: num('approx'), eta: val('eta') || null, listId: chosen === 'home' ? null : chosen };
+      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: num('approx'), eta: val('eta') || null, listId: chosen === 'home' ? null : chosen };
       if (i) store.update('items', i.id, data); else store.add('items', { ...data, arrived: false });
       closeSheet(); toast(i ? 'Saved' : 'Added to the list');
     },
@@ -827,8 +949,8 @@ function doneShopping(L) {
   openSheet(`
     <h3>Done shopping 🛒</h3>
     <p style="margin-top:0;color:var(--muted)">${got.length} item${got.length > 1 ? 's' : ''} in the cart. Add the receipt total to expenses?</p>
-    <div class="field"><label>Receipt total (₪)</label><input class="amount" name="amount" inputmode="decimal" placeholder="0" autofocus></div>
-    <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), localStorage.getItem('ourhome-me') || 'a')}</div>
+    <div class="field"><label>Receipt total (${cur()})</label><input class="amount" name="amount" inputmode="decimal" placeholder="0" autofocus></div>
+    <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), defPayer())}</div>
     <div class="field"><span class="lbl">Split</span>${chips('split', [{ v: '50', label: 'Half-half' }, { v: 'a', label: `Only ${esc(nm('a'))}'s` }, { v: 'b', label: `Only ${esc(nm('b'))}'s` }], '50')}</div>
     <button class="btn" data-sheet="save">Add to expenses & clear the cart</button>
     <div class="btn-row"><button class="btn light" data-sheet="clear">Just clear the cart</button></div>
@@ -858,14 +980,14 @@ function toggleItem(i) {
     store.update('items', i.id, { arrived: false, arrivedAt: null, expenseId: null });
     return;
   }
-  if (i.source === 'gift') {
+  if (i.source === 'gift' || i.source === 'owned') {
     store.update('items', i.id, { arrived: true, arrivedAt: today() });
-    return toast(`${i.name} arrived 🎁`);
+    return toast(`${i.name} ✓`);
   }
-  const payer = i.owner === 'a' || i.owner === 'b' ? i.owner : (localStorage.getItem('ourhome-me') || 'a');
+  const payer = i.owner === 'a' || i.owner === 'b' ? i.owner : (defPayer());
   openSheet(`
     <h3>🎉 ${esc(i.name)} arrived!</h3>
-    <div class="field"><label>What did it cost? (₪)</label>
+    <div class="field"><label>What did it cost? (${cur()})</label>
       <input class="amount" name="amount" inputmode="decimal" value="${i.approx || ''}" placeholder="0" autofocus></div>
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), payer)}</div>
     <div class="field"><span class="lbl">Split</span>${chips('split', [{ v: '50', label: 'Half-half' }, { v: 'a', label: `Only ${esc(nm('a'))}'s` }, { v: 'b', label: `Only ${esc(nm('b'))}'s` }], '50')}</div>
@@ -897,8 +1019,8 @@ function contractForm() {
     <div class="field"><label>Notice needed before the end (days)</label>
       <input name="noticeDays" inputmode="numeric" value="${esc(c.noticeDays || 60)}">
       <div class="hint">How early you must tell the landlord if you're renewing or leaving (check the contract — often 60 or 90 days). You'll get a reminder one month before that.</div></div>
-    <div class="field"><label>Monthly rent (₪, optional)</label><input name="rent" inputmode="decimal" value="${esc(c.rent || '')}"></div>
-    <div class="field"><label>Deposit (₪)</label><input name="deposit" inputmode="decimal" value="${esc(c.deposit || '')}"></div>
+    <div class="field"><label>Monthly rent (${cur()}, optional)</label><input name="rent" inputmode="decimal" value="${esc(c.rent || '')}"></div>
+    <div class="field"><label>Deposit (${cur()})</label><input name="deposit" inputmode="decimal" value="${esc(c.deposit || '')}"></div>
     <div class="field"><span class="lbl">Deposit type</span>${chips('depositType', [{ v: 'cash', label: 'Cash' }, { v: 'check', label: 'Check' }, { v: 'guarantee', label: 'Bank guarantee' }, { v: 'other', label: 'Other' }], c.depositType || 'check')}</div>
     <div class="field"><label>Notes</label><textarea name="notes" placeholder="Landlord's phone, option to extend, etc.">${esc(c.notes || '')}</textarea></div>
     <button class="btn" data-sheet="save">Save</button>
@@ -933,6 +1055,7 @@ function downloadICS() {
 // ---------------- Settings ----------------
 function settingsForm() {
   const c = cfg();
+  const c0 = S.settings || {};
   let pets = c.pets.map(p => ({ ...p }));
 
   const petRows = () => pets.map((p, i) => `
@@ -962,7 +1085,9 @@ function settingsForm() {
         houseName: val('houseName') || DEFAULTS.houseName,
         names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
         pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
+        currency: sheet.querySelector('[name=currency]').value,
       });
+      const d = chipVal('device'); if (d) localStorage.setItem('ourhome-device', d);
       closeSheet(); toast('Saved');
     },
     backup: () => {
@@ -982,6 +1107,11 @@ function settingsForm() {
       <div class="field"><label>Person 1</label><input name="nameA" value="${esc(c.names.a)}"></div>
       <div class="field"><label>Person 2</label><input name="nameB" value="${esc(c.names.b)}"></div>
     </div>
+    <div class="field"><span class="lbl">This phone belongs to</span>${chips('device', people(), device() || '')}
+      <div class="hint">Used to color the balance: green when you're owed, red when you owe.</div></div>
+    <div class="field"><label>Currency</label><div class="select-wrap"><select name="currency" class="plain-select">
+      ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (c0.currency || 'ILS') ? 'selected' : ''}>${c.label}</option>`).join('')}
+    </select></div></div>
     <div class="field"><span class="lbl">Pets</span>
       <div id="pets">${petRows()}</div>
       <button type="button" class="btn ghost" data-sheet="add-pet" style="margin-top:8px">${svg(ICONS.plus, 20)} Add a pet</button>
@@ -996,7 +1126,58 @@ function settingsForm() {
 // ================================================================
 //  Main click handler
 // ================================================================
+app.addEventListener('change', e => {
+  if (e.target.id === 'file-input' && e.target.files.length) uploadFiles([...e.target.files]);
+});
+
+// ---- Swipe left on a row to delete it ----
+let sw = null, swipedAt = 0;
+const closeSwipes = except => app.querySelectorAll('.swipe.open').forEach(x => {
+  if (x === except) return;
+  x.classList.remove('open');
+  setTimeout(() => x.classList.remove('swiping'), 220);
+  const r = x.querySelector('.swipe-row'); r.style.transition = 'transform .2s'; r.style.transform = '';
+});
+app.addEventListener('touchstart', e => {
+  const el = e.target.closest('.swipe');
+  if (!e.target.closest('.swipe-del')) closeSwipes(el);
+  if (!el || e.target.closest('.swipe-del')) { sw = null; return; }
+  const t = e.touches[0];
+  sw = { el, row: el.querySelector('.swipe-row'), x: t.clientX, y: t.clientY, on: false, base: el.classList.contains('open') ? -96 : 0, cur: 0 };
+}, { passive: true });
+app.addEventListener('touchmove', e => {
+  if (!sw) return;
+  const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+  if (!sw.on) {
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.3) { sw.on = true; sw.row.style.transition = 'none'; sw.el.classList.add('swiping'); }
+    else if (Math.abs(dy) > 10) { sw = null; return; }
+    else return;
+  }
+  if (e.cancelable) e.preventDefault();
+  sw.cur = Math.min(0, sw.base + dx);
+  sw.row.style.transform = `translateX(${sw.cur}px)`;
+}, { passive: false });
+const swipeEnd = () => {
+  if (!sw) return;
+  const { el, row, on, cur } = sw; sw = null;
+  if (!on) return;
+  swipedAt = Date.now();
+  row.style.transition = 'transform .2s ease-out';
+  if (cur < -el.offsetWidth * 0.5) {
+    row.style.transform = 'translateX(-100%)';
+    setTimeout(() => swipeDelete(el.dataset.col, el.dataset.id), 180);
+  } else if (cur < -48) {
+    row.style.transform = 'translateX(-96px)'; el.classList.add('open');
+  } else {
+    row.style.transform = ''; el.classList.remove('open');
+    setTimeout(() => el.classList.remove('swiping'), 220);
+  }
+};
+app.addEventListener('touchend', swipeEnd);
+app.addEventListener('touchcancel', swipeEnd);
+
 app.addEventListener('click', e => {
+  if (Date.now() - swipedAt < 400) { e.preventDefault(); return; }   // ignore the tap that ends a swipe
   const el = e.target.closest('[data-act]');
   if (!el || !S) return;
   const id = el.dataset.id;
@@ -1025,6 +1206,9 @@ app.addEventListener('click', e => {
     case 'toggle-item': toggleItem(find('items')); break;
     case 'toggle-arrived': showArrived = !showArrived; render(); break;
     case 'edit-contract': contractForm(); break;
+    case 'open-file': openFile(contractFiles().find(f => f.id === id)); break;
+    case 'delete-file': deleteFile(contractFiles().find(f => f.id === id)); break;
+    case 'swipe-delete': swipeDelete(el.dataset.col, id); break;
     case 'ics': downloadICS(); break;
   }
 });
@@ -1039,6 +1223,19 @@ app.addEventListener('submit', e => {
   input.value = '';
   store.add('items', { name, listId: L.id, arrived: false });
 });
+
+function askDevice() {
+  if (device() || !sheet.classList.contains('hidden')) return;
+  openSheet(`
+    <h3>Who's using this phone?</h3>
+    <p style="margin-top:0;color:var(--muted)">So the app knows whose side to show. You can change it later in ⚙️ Settings.</p>
+    <button class="choice" data-sheet="a"><span><b>${esc(nm('a'))}</b></span></button>
+    <button class="choice" data-sheet="b"><span><b>${esc(nm('b'))}</b></span></button>
+  `, {
+    a: () => { localStorage.setItem('ourhome-device', 'a'); closeSheet(); render(); },
+    b: () => { localStorage.setItem('ourhome-device', 'b'); closeSheet(); render(); },
+  });
+}
 
 // ================================================================
 //  First run: add the standard bills
@@ -1101,6 +1298,7 @@ store.onChange((snap, err) => {
   }
   S = snap;
   seedIfNeeded();
+  if (!device() && sheet.classList.contains('hidden')) setTimeout(askDevice, 400);
   render();
 });
 
