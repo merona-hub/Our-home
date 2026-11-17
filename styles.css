@@ -185,7 +185,8 @@ nav.tabs > button.on svg { stroke-width: 2.2; }
   animation: up .22s ease-out;
 }
 @keyframes up { from { transform: translateY(40px); opacity: .4; } }
-#sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--c-soft); margin: 0 auto 10px; }
+#sheet .grab-zone { margin: -10px -20px 4px; padding: 10px 0 12px; touch-action: none; cursor: grab; }
+#sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: var(--neutral); opacity: .6; margin: 0 auto; }
 #sheet h3 { margin: 4px 0 14px; font-size: 21px; }
 .field { margin-bottom: 16px; }
 .field > label, .field > .lbl { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -231,16 +232,22 @@ dl.facts dt { color: var(--muted); }
 dl.facts dd { margin: 0; font-weight: 600; text-align: right; }
 
 /* ---------- Pets (settings) ---------- */
-.pet-edit { background: var(--bg); border-radius: 16px; padding: 12px; margin-bottom: 10px; }
-.pet-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.pet-top input { flex: 1; min-height: 46px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; padding: 8px 12px; font-size: 17px; outline: none; }
-.pet-top input:focus { border-color: var(--c2); }
+.pet-edit { display: flex; align-items: flex-start; gap: 10px; background: var(--bg); border-radius: 16px; padding: 12px; margin-bottom: 10px; }
+.pet-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.pet-fields input, .pet-fields select {
+  width: 100%; min-height: 46px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff;
+  padding: 8px 12px; font-size: 17px; outline: none; color: var(--text);
+}
+.pet-fields input:focus, .pet-fields select:focus { border-color: var(--c2); }
+.select-wrap { position: relative; }
+.select-wrap select { -webkit-appearance: none; appearance: none; padding-right: 40px; }
+.select-wrap::after {
+  content: ""; position: absolute; right: 16px; top: 50%; width: 8px; height: 8px; margin-top: -6px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); pointer-events: none;
+}
 .pet-art { width: 46px; height: 46px; border-radius: 50%; background: var(--rose); color: var(--text); display: grid; place-items: center; flex: none; }
 .icon-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; }
 .icon-btn:active { background: var(--line); }
-.pet-edit .chips button { min-height: 38px; padding: 0 12px; font-size: 14px; background: #fff; }
-.pet-edit .chips button.on { background: var(--c-soft); }
-
 /* ---------- To buy: lists & projects ---------- */
 .list-card { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 12px 14px 16px; min-height: 72px; border-bottom: 1px solid var(--line); }
 .list-card:last-child { border-bottom: none; }

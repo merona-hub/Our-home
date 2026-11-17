@@ -500,7 +500,7 @@ let sheetHandlersFor = null;   // optional hook for chips with dynamic names
 
 function openSheet(html, handlers = {}) {
   sheetHandlers = handlers;
-  sheet.innerHTML = `<div class="grab"></div>${html}`;
+  sheet.innerHTML = `<div class="grab-zone"><div class="grab"></div></div>${html}`;
   sheet.classList.remove('hidden');
   backdrop.classList.remove('hidden');
   sheet.scrollTop = 0;
@@ -511,6 +511,8 @@ function closeSheet() {
   sheet.classList.add('hidden');
   backdrop.classList.add('hidden');
   sheet.innerHTML = '';
+  sheet.style.transform = ''; sheet.style.transition = '';
+  backdrop.style.opacity = ''; backdrop.style.transition = '';
   sheetHandlers = {};
   sheetHandlersFor = null;
 }
@@ -542,6 +544,48 @@ sheet.addEventListener('click', e => {
   }
 });
 sheet.addEventListener('submit', e => e.preventDefault());
+sheet.addEventListener('change', e => {
+  const sel = e.target.closest('select[name^="pettype-"]');
+  if (sel) sheet.querySelector(`.pet-edit[data-i="${sel.dataset.i}"] .pet-art`).innerHTML = petArt(sel.value, 30);
+});
+
+// Swipe the sheet down to close it (from the handle, or from anywhere when scrolled to the top)
+let drag = null;
+sheet.addEventListener('touchstart', e => {
+  if (e.target.closest('input, textarea, select')) return;
+  const onHandle = !!e.target.closest('.grab-zone');
+  if (!onHandle && sheet.scrollTop > 0) return;
+  drag = { y: e.touches[0].clientY, dy: 0, onHandle };
+  sheet.style.transition = 'none';
+}, { passive: true });
+sheet.addEventListener('touchmove', e => {
+  if (!drag) return;
+  drag.dy = e.touches[0].clientY - drag.y;
+  if (drag.dy <= 0) {
+    if (!drag.onHandle) { drag = null; sheet.style.transform = ''; return; }   // let it scroll normally
+    drag.dy = 0;
+  }
+  if (e.cancelable) e.preventDefault();
+  sheet.style.transform = `translateY(${drag.dy}px)`;
+  backdrop.style.opacity = String(Math.max(0, 1 - drag.dy / 400));
+}, { passive: false });
+const endDrag = () => {
+  if (!drag) return;
+  const close = drag.dy > 90;
+  drag = null;
+  sheet.style.transition = 'transform .2s ease-out';
+  backdrop.style.transition = 'opacity .2s ease-out';
+  if (close) {
+    sheet.style.transform = 'translateY(100%)';
+    backdrop.style.opacity = '0';
+    setTimeout(closeSheet, 190);
+  } else {
+    sheet.style.transform = '';
+    backdrop.style.opacity = '';
+  }
+};
+sheet.addEventListener('touchend', endDrag);
+sheet.addEventListener('touchcancel', endDrag);
 
 const people = () => [{ v: 'a', label: esc(nm('a')) }, { v: 'b', label: esc(nm('b')) }];
 
@@ -893,17 +937,19 @@ function settingsForm() {
 
   const petRows = () => pets.map((p, i) => `
     <div class="pet-edit" data-i="${i}">
-      <div class="pet-top">
-        <span class="pet-art">${petArt(p.type, 30)}</span>
+      <span class="pet-art">${petArt(p.type, 30)}</span>
+      <div class="pet-fields">
         <input name="pet-${i}" value="${esc(p.name)}" placeholder="Pet's name">
-        <button type="button" class="icon-btn" data-sheet="remove-pet" data-i="${i}" aria-label="Remove">${svg(ICONS.close, 20)}</button>
+        <div class="select-wrap"><select name="pettype-${i}" data-i="${i}" aria-label="What kind of pet">
+          ${PETS.map(t => `<option value="${t.id}" ${t.id === p.type ? 'selected' : ''}>${t.label}</option>`).join('')}
+        </select></div>
       </div>
-      ${chips('pettype-' + i, PETS.map(t => ({ v: t.id, label: t.label })), p.type)}
+      <button type="button" class="icon-btn" data-sheet="remove-pet" data-i="${i}" aria-label="Remove">${svg(ICONS.close, 20)}</button>
     </div>`).join('');
 
   const readPets = () => pets.forEach((p, i) => {
     p.name = val('pet-' + i) || '';
-    p.type = chipVal('pettype-' + i) || p.type;
+    p.type = sheet.querySelector(`[name="pettype-${i}"]`)?.value || p.type;
   });
   const redrawPets = () => { sheet.querySelector('#pets').innerHTML = petRows(); };
 
@@ -927,12 +973,6 @@ function settingsForm() {
       a.click();
     },
     signout: () => { if (confirm('Sign out?')) { closeSheet(); store.signOut(); } },
-  };
-  // the pet-type chips redraw the little picture
-  sheetHandlersFor = (field, v) => {
-    if (!field.startsWith('pettype-')) return;
-    const i = +field.split('-')[1];
-    sheet.querySelector(`.pet-edit[data-i="${i}"] .pet-art`).innerHTML = petArt(v, 30);
   };
 
   openSheet(`
