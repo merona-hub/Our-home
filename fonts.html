@@ -1,54 +1,44 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Font options</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,800&family=Plus+Jakarta+Sans:wght@400;600;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Font options</title><link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@500;600;700&family=Outfit:wght@400;500;600;700&family=Lora:wght@400;600;700&family=DM+Serif+Display&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
-  body { margin: 0; background: #F5F0E8; color: #343A34; font-family: -apple-system, sans-serif; padding: 16px; }
-  h1 { font-size: 20px; margin: 4px 4px 16px; }
-  .opt { margin-bottom: 28px; }
-  .tag { font-size: 14px; font-weight: 700; color: #6F7369; margin: 0 4px 8px; text-transform: uppercase; letter-spacing: .5px; }
-  .phone { border-radius: 18px; overflow: hidden; background: #F5F0E8; box-shadow: 0 2px 8px #0001; }
-  .hdr { background: #455B48; color: #fff; padding: 16px 18px; }
-  .hdr .t { font-size: 24px; font-weight: 700; }
-  .hdr .w { font-size: 13px; color: #E8D0CC; margin-top: 2px; }
-  .body { padding: 14px; }
-  .card { background: #fff; border-radius: 16px; padding: 18px; text-align: center; margin-bottom: 12px; }
-  .lbl { color: #6F7369; font-size: 16px; }
-  .big { font-size: 44px; font-weight: 800; color: #455B48; line-height: 1.15; }
-  .sub { color: #6F7369; font-size: 15px; }
-  .btn { background: #455B48; color: #fff; border-radius: 16px; padding: 16px; text-align: center; font-size: 19px; font-weight: 600; margin-bottom: 12px; }
-  .row { background: #fff; border-radius: 16px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
-  .row b { font-weight: 600; } .row small { display: block; color: #6F7369; font-size: 14px; }
-  .row .a { color: #B97970; font-weight: 700; }
-  .nunito * { font-family: 'Nunito', sans-serif; }
-  .dm * { font-family: 'DM Sans', sans-serif; }
-  .jakarta * { font-family: 'Plus Jakarta Sans', sans-serif; }
-  .fraunces * { font-family: 'DM Sans', sans-serif; }
-  .fraunces .t, .fraunces .big { font-family: 'Fraunces', serif; font-weight: 700; }
-</style>
-</head>
-<body>
-<h1>Font options for Our Home</h1>
-<div id="opts"></div>
-<script>
-  const opts = [['nunito', '1 · Nunito'], ['dm', '2 · DM Sans'], ['jakarta', '3 · Plus Jakarta Sans'], ['fraunces', '4 · Fraunces + DM Sans']];
-  document.getElementById('opts').innerHTML = opts.map(([c, n]) => `
-    <div class="opt ${c}">
-      <div class="tag">${n}</div>
-      <div class="phone">
-        <div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee & Stella</div></div>
-        <div class="body">
-          <div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
-          <div class="btn">＋ Add expense</div>
-          <div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div>
-        </div>
-      </div>
-    </div>`).join('');
-</script>
-</body>
-</html>
+body{margin:0;background:#F5F0E8;color:#343A34;font-family:-apple-system,sans-serif;padding:16px} h1{font-size:20px;margin:4px 4px 16px}
+.opt{margin-bottom:28px} .tag{font-family:-apple-system,sans-serif!important;font-size:15px;font-weight:700;color:#343A34;margin:0 4px 8px} .tag span{font-weight:400;color:#6F7369}
+.phone{border-radius:18px;overflow:hidden;background:#F5F0E8;box-shadow:0 2px 8px #0001}
+.hdr{background:#455B48;color:#fff;padding:16px 18px} .hdr .t{font-size:26px;line-height:1.2} .hdr .w{font-size:13px;color:#E8D0CC;margin-top:2px}
+.body{padding:14px} .card{background:#fff;border-radius:16px;padding:18px;text-align:center;margin-bottom:12px}
+.lbl{color:#6F7369;font-size:16px} .big{font-size:44px;color:#455B48;line-height:1.15} .sub{color:#6F7369;font-size:15px}
+.btn{background:#455B48;color:#fff;border-radius:16px;padding:16px;text-align:center;font-size:19px;font-weight:600;margin-bottom:12px}
+.row{background:#fff;border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.row b{font-weight:600} .row small{display:block;color:#6F7369;font-size:14px} .row .a{color:#B97970;font-weight:700}
+.a *{font-family:'Fredoka',sans-serif} .a .t,.a .big{font-family:'Fredoka',serif;font-weight:700}
+.b *{font-family:'Quicksand',sans-serif} .b .t,.b .big{font-family:'Quicksand',serif;font-weight:700}
+.c *{font-family:'Outfit',sans-serif} .c .t,.c .big{font-family:'Outfit',serif;font-weight:700}
+.d *{font-family:'Lora',sans-serif} .d .t,.d .big{font-family:'Lora',serif;font-weight:700}
+.e *{font-family:'Outfit',sans-serif} .e .t,.e .big{font-family:'DM Serif Display',serif;font-weight:400}
+.f *{font-family:'Quicksand',sans-serif} .f .t,.f .big{font-family:'Caveat',serif;font-weight:700}
+.f .t{font-size:34px} .f .big{font-size:56px} .e .big{font-size:48px}
+
+</style></head><body><h1>More font options for Our Home</h1><div id="opts"><div class="opt a"><div class="tag">A · Fredoka <span>— playful & bubbly</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div><div class="opt b"><div class="tag">B · Quicksand <span>— soft, light & rounded</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div><div class="opt c"><div class="tag">C · Outfit <span>— minimal & airy</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div><div class="opt d"><div class="tag">D · Lora <span>— classic & bookish</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div><div class="opt e"><div class="tag">E · DM Serif Display + Outfit <span>— elegant, magazine-like</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div><div class="opt f"><div class="tag">F · Caveat + Quicksand <span>— handwritten & cozy</span></div><div class="phone">
+<div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee &amp; Stella</div></div>
+<div class="body"><div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+<div class="btn">＋ Add expense</div>
+<div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div></div></div></div></div></body></html>
