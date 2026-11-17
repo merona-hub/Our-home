@@ -182,6 +182,7 @@ let tripSeg = localStorage.getItem('ourhome-tripseg') || 'money';             //
 let showArrived = false;
 let shopView = localStorage.getItem('ourhome-shopview') || null;   // null = overview, 'home', or a list id
 const app = document.getElementById('app');
+const sheet = document.getElementById('sheet');
 
 // ================================================================
 //  Helpers
@@ -454,13 +455,14 @@ const linkBtn = url => url ? `<a class="btn light" href="${esc(/^https?:/i.test(
 function renderPlan(t) {
   const plans = tripItems(t, 'plan');
   const books = tripItems(t, 'booking').filter(b => b.date);
-  const days = new Set([...plans.map(p => p.date || ''), ...books.map(b => b.date)]);
+  const days = new Set([...plans.map(p => p.date || ''), ...books.map(b => b.date), ...books.filter(b => b.endDate && (b.type === 'car' || b.type === 'hotel')).map(b => b.endDate)]);
   if (t.start && t.end) for (let d = t.start; d <= t.end && days.size < 120; d = addDays(d, 1)) days.add(d);
   const sorted = [...days].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
   if (!plans.length && !books.length && !(t.start && t.end)) return `<div class="empty">Add the trip dates (✏️) to get a day-by-day plan,<br>or tap <b>+</b> to add something.</div>`;
   return sorted.map(d => {
     const rows = [
-      ...books.filter(b => b.date === d).map(b => ({ time: b.time || '', html: `<button class="row" data-act="edit-booking" data-id="${b.id}"><span class="ico">${btype(b.type).icon}</span><span class="main"><div class="title">${esc(b.title)}</div><div class="meta">${[b.time, 'Booking', b.code ? '#' + b.code : ''].filter(Boolean).map(esc).join(' · ')}</div></span></button>` })),
+      ...books.filter(b => b.date === d).map(b => ({ time: b.time || '', html: `<button class="row" data-act="edit-booking" data-id="${b.id}"><span class="ico">${btype(b.type).icon}</span><span class="main"><div class="title">${esc(bookingTitle(b))}</div><div class="meta">${esc([b.time, b.type === 'flight' && b.endTime ? 'lands ' + b.endTime : '', b.type === 'car' && b.place ? 'pick-up ' + b.place : '', b.code ? '#' + b.code : ''].filter(Boolean).join(' · '))}</div></span></button>` })),
+      ...books.filter(b => b.endDate && b.endDate === d && b.endDate !== b.date && (b.type === 'car' || b.type === 'hotel')).map(b => ({ time: b.endTime || '', html: `<button class="row" data-act="edit-booking" data-id="${b.id}"><span class="ico">${btype(b.type).icon}</span><span class="main"><div class="title">${b.type === 'car' ? 'Return the car' : 'Check out'} · ${esc(bookingTitle(b))}</div><div class="meta">${esc([b.endTime, b.place2 || ''].filter(Boolean).join(' · '))}</div></span></button>` })),
       ...plans.filter(p => (p.date || '') === d).map(p => ({ time: p.time || '', html: swipeable('tripitems', p.id, `<button class="row" data-act="edit-plan" data-id="${p.id}"><span class="time">${esc(p.time || '')}</span><span class="main"><div class="title">${esc(p.title)}</div>${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ''}</span></button>`) })),
     ].sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
     const n = t.start && d ? daysBetween(t.start, d) + 1 : 0;
@@ -486,7 +488,7 @@ function renderBookings(t) {
   if (!all.length) return `<div class="empty">Flights, hotels, car rental, tickets…<br>Tap <b>+</b> to add a booking.</div>`;
   return `<div class="list">${all.map(b => swipeable('tripitems', b.id, `<button class="row" data-act="edit-booking" data-id="${b.id}">
       <span class="ico">${btype(b.type).icon}</span>
-      <span class="main"><div class="title">${esc(b.title)}</div><div class="meta">${esc([b.date ? fmtDate(b.date) + (b.endDate ? ' – ' + fmtDate(b.endDate) : '') : 'No date', b.time, b.code ? '#' + b.code : ''].filter(Boolean).join(' · '))}</div></span>
+      <span class="main"><div class="title">${esc(bookingTitle(b))}${(b.files || []).length ? ' <span class="qty">📎</span>' : ''}</div><div class="meta">${esc(bookingMeta(b).filter(Boolean).join(' · '))}</div></span>
       ${b.cost ? `<span class="amt" style="color:var(--text)">${money(b.cost)}</span>` : ''}</button>`)).join('')}</div>`;
 }
 
@@ -534,20 +536,84 @@ function placeForm(t, p = null) {
   });
 }
 
+// Fields that depend on the booking type
+function bookingFields(type, x) {
+  const f = (name, label, type2 = 'text', ph = '') => `<div class="field"><label>${label}</label><input ${type2 === 'text' ? '' : `type="${type2}"`} name="${name}" value="${esc(x[name] || '')}" placeholder="${ph}"></div>`;
+  const pair = (a, b) => `<div class="split2">${a}${b}</div>`;
+  if (type === 'flight') return `
+    <div class="field"><label>Flight number</label>
+      <div class="amt-row"><input name="flightNo" value="${esc(x.flightNo || '')}" placeholder="e.g. LY91" autocapitalize="characters"><button type="button" class="btn small" data-sheet="lookup">Look up</button></div>
+      <div class="hint" id="flight-hint">${S.settings.flightKey ? 'Type the number and the date, then tap Look up.' : 'Fill in by hand, or add a flight-data key in ⚙️ Settings to fill this in automatically.'}</div></div>
+    ${f('airline', 'Airline (optional)', 'text', 'e.g. El Al')}
+    ${pair(f('from', 'From', 'text', 'e.g. TLV'), f('to', 'To', 'text', 'e.g. NRT'))}
+    ${pair(f('date', 'Takeoff date', 'date'), f('time', 'Takeoff time', 'time'))}
+    ${pair(f('endDate', 'Landing date', 'date'), f('endTime', 'Landing time', 'time'))}`;
+  if (type === 'car') return `
+    ${f('title', 'Rental company', 'text', 'e.g. Toyota Rent a Car')}
+    ${f('place', 'Pick-up place', 'text', 'e.g. Narita Airport T1')}
+    ${pair(f('date', 'Pick-up date', 'date'), f('time', 'Pick-up time', 'time'))}
+    ${f('place2', 'Drop-off place', 'text', 'Same as pick-up if empty')}
+    ${pair(f('endDate', 'Drop-off date', 'date'), f('endTime', 'Drop-off time', 'time'))}`;
+  if (type === 'hotel') return `
+    ${f('title', 'Hotel name', 'text', 'e.g. Ryokan in Kyoto')}
+    ${f('place', 'Address (optional)')}
+    ${pair(f('date', 'Check-in', 'date'), f('time', 'Check-in time', 'time'))}
+    ${pair(f('endDate', 'Check-out', 'date'), f('endTime', 'Check-out time', 'time'))}`;
+  return `
+    ${f('title', 'Name', 'text', type === 'train' ? 'e.g. Shinkansen Tokyo → Kyoto' : type === 'restaurant' ? 'e.g. Sushi Saito' : 'e.g. teamLab tickets')}
+    ${f('place', type === 'train' ? 'From → to (optional)' : 'Where? (optional)')}
+    ${pair(f('date', 'Date', 'date'), f('time', 'Time', 'time'))}
+    ${type === 'train' || type === 'activity' ? '' : f('endDate', 'Until (optional)', 'date')}`;
+}
+const bookingTitle = b => b.type === 'flight' ? [b.flightNo, b.from && b.to ? `${b.from} → ${b.to}` : ''].filter(Boolean).join(' · ') || b.title || 'Flight' : b.title || btype(b.type).label;
+function bookingMeta(b) {
+  const d = (x, t) => x ? fmtDate(x) + (t ? ' ' + t : '') : '';
+  if (b.type === 'flight') return [b.airline, b.date ? `${d(b.date, b.time)} → ${b.endDate && b.endDate !== b.date ? d(b.endDate, b.endTime) : (b.endTime || '')}` : '', b.code ? '#' + b.code : ''];
+  if (b.type === 'car') return [b.place ? 'from ' + b.place : '', d(b.date, b.time), b.endDate ? '→ ' + d(b.endDate, b.endTime) + (b.place2 ? ' at ' + b.place2 : '') : '', b.code ? '#' + b.code : ''];
+  return [b.date ? fmtDate(b.date) + (b.endDate ? ' – ' + fmtDate(b.endDate) : '') : 'No date', b.time, b.place, b.code ? '#' + b.code : ''];
+}
+
+// Flight details from the flight number (AeroDataBox, needs a free key in Settings)
+async function lookupFlight() {
+  const hint = sheet.querySelector('#flight-hint');
+  const key = S.settings.flightKey;
+  const no = (val('flightNo') || '').replace(/\s+/g, '').toUpperCase();
+  const date = val('date');
+  if (!key) { hint.innerHTML = 'Automatic lookup needs a free flight-data key. Add it in <b>⚙️ Settings → Flight lookup</b>.'; return; }
+  if (!no || !date) { hint.textContent = 'Type the flight number and the takeoff date first.'; return; }
+  hint.textContent = 'Looking up…';
+  try {
+    const r = await fetch(`https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(no)}/${date}?withAircraftImage=false&withLocation=false`,
+      { headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' } });
+    if (r.status === 204 || r.status === 404) { hint.textContent = 'No flight found with that number on that date.'; return; }
+    if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'the key was not accepted' : 'error ' + r.status);
+    const list = await r.json();
+    const fl = Array.isArray(list) ? list[0] : list;
+    if (!fl) { hint.textContent = 'No flight found with that number on that date.'; return; }
+    const local = x => (x && (x.scheduledTime?.local || x.scheduledTimeLocal || x.revisedTime?.local)) || '';
+    const dep = local(fl.departure), arr = local(fl.arrival);
+    const set = (n, v) => { const el = sheet.querySelector(`[name="${n}"]`); if (el && v) el.value = v; };
+    set('airline', fl.airline?.name);
+    set('from', fl.departure?.airport?.iata || fl.departure?.airport?.name);
+    set('to', fl.arrival?.airport?.iata || fl.arrival?.airport?.name);
+    set('date', dep.slice(0, 10)); set('time', dep.slice(11, 16));
+    set('endDate', arr.slice(0, 10)); set('endTime', arr.slice(11, 16));
+    const cities = [fl.departure?.airport?.municipalityName, fl.arrival?.airport?.municipalityName].filter(Boolean).join(' → ');
+    hint.textContent = `Found ✓ ${fl.airline?.name || ''} ${cities}`.trim();
+  } catch (err) { hint.textContent = "Couldn't look it up (" + (err.message || err) + '). You can fill it in by hand.'; }
+}
+
 function bookingForm(t, b = null) {
-  const x = b || { type: 'hotel', title: '', date: t.start || '', endDate: '', time: '', code: '', link: '', notes: '', cost: '' };
+  const x = b || { type: 'flight', date: t.start || '' };
   const linked = b && b.expenseId && S.expenses.find(e => e.id === b.expenseId);
+  let cur = x.type;
   openSheet(`
     <h3>${b ? 'Edit booking' : 'New booking'}</h3>
     <div class="field"><span class="lbl">Type</span>${chips('btype', BOOKING_TYPES.map(o => ({ v: o.id, label: o.icon + ' ' + o.label })), x.type)}</div>
-    <div class="field"><label>Name</label><input name="title" value="${esc(x.title)}" placeholder="e.g. Ryokan in Kyoto, TLV → Tokyo"></div>
-    <div class="split2">
-      <div class="field"><label>Date</label><input type="date" name="date" value="${esc(x.date || '')}"></div>
-      <div class="field"><label>Until (optional)</label><input type="date" name="endDate" value="${esc(x.endDate || '')}"></div>
-    </div>
-    <div class="field"><label>Time (optional)</label><input type="time" name="time" value="${esc(x.time || '')}"></div>
+    <div id="bfields">${bookingFields(x.type, x)}</div>
     <div class="field"><label>Confirmation number (optional)</label><input name="code" value="${esc(x.code || '')}" autocapitalize="characters"></div>
     <div class="field"><label>Link (optional)</label><input name="link" inputmode="url" value="${esc(x.link || '')}" placeholder="Booking page, ticket…"></div>
+    ${attachField('Confirmation · screenshots & files', x.files || [])}
     <div class="field"><label>Notes (optional)</label><textarea name="notes">${esc(x.notes || '')}</textarea></div>
     ${linked ? `<div class="banner">Cost: ${money(linked.amount)}, already in the trip expenses. Edit it there.</div>`
       : `${amountField('cost', 'Cost (optional)', b && b.costCur ? b.costOrig : (b?.cost || ''), (b && b.costCur) || t.currency || mainCur(), { big: false })}
@@ -557,23 +623,37 @@ function bookingForm(t, b = null) {
     <div class="btn-row"><button class="btn" data-sheet="save">${b ? 'Save' : 'Add booking'}</button></div>
     ${b ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
+    'chip:btype': v => {
+      // keep what was typed when switching type
+      const keep = {}; sheet.querySelectorAll('#bfields [name]').forEach(el => { keep[el.name] = el.value; });
+      sheet.querySelector('#bfields').innerHTML = bookingFields(v, { ...x, ...keep });
+      cur = v;
+    },
+    lookup: () => lookupFlight(),
     save: async () => {
-      const title = val('title'); if (!title) return toast('Give the booking a name');
       const type = chipVal('btype');
-      const data = { type, title, date: val('date') || null, endDate: val('endDate') || null, time: val('time') || null, code: val('code') || null, link: val('link') || null, notes: val('notes') || null };
+      const g = n => val(n) || null;
+      const data = { type, title: g('title'), flightNo: g('flightNo') ? g('flightNo').toUpperCase().replace(/\s+/g, '') : null, airline: g('airline'), from: g('from'), to: g('to'),
+        place: g('place'), place2: g('place2'), date: g('date'), time: g('time'), endDate: g('endDate'), endTime: g('endTime'),
+        code: g('code'), link: g('link'), notes: g('notes') };
+      if (type === 'flight' && !data.flightNo && !data.from) return toast('Add the flight number or where it flies from');
+      if (type !== 'flight' && !data.title) return toast('Give the booking a name');
+      data.title = data.title || bookingTitle(data);
+      data.files = finishAttach();
       if (!linked && num('cost') > 0) {
         let conv;
         try { conv = await readAmount('cost', data.date); } catch (err) { return toast(err.message); }
         Object.assign(data, { cost: conv.amount, costOrig: conv.origAmount, costCur: conv.origCurrency });
         if (sheet.querySelector('[name=toexp]')?.checked) {
-          data.expenseId = await store.add('expenses', { ...conv, category: btype(type).cat, note: title, paidBy: chipVal('paidBy'), date: data.date || today(), splitA: 50, tripId: t.id });
+          data.expenseId = await store.add('expenses', { ...conv, category: btype(type).cat, note: bookingTitle(data), paidBy: chipVal('paidBy'), date: data.date || today(), splitA: 50, tripId: t.id });
         }
       }
       if (b) store.update('tripitems', b.id, data); else store.add('tripitems', { ...data, tripId: t.id, kind: 'booking' });
       closeSheet(); toast(data.expenseId ? 'Saved & added to expenses ✓' : 'Saved');
     },
-    delete: () => { if (confirm(`Delete “${b.title}”?${linked ? ' (Its expense stays.)' : ''}`)) { store.remove('tripitems', b.id); closeSheet(); } },
+    delete: () => { if (confirm(`Delete “${bookingTitle(b)}”?${linked ? ' (Its expense stays.)' : ''}`)) { store.remove('tripitems', b.id); closeSheet(); } },
   });
+  initAttach(x.files);
 }
 
 // ---------------- Saved from socials ----------------
@@ -856,6 +936,8 @@ function renderBills() {
 
 // ---------------- Shopping ----------------
 const listOf = i => i.listId || 'home';
+const qtyStepper = (i, act = 'qty') => `<span class="stepper"><button type="button" data-act="${act}-minus" data-id="${i.id}" aria-label="Less">−</button><b>${+i.count || 1}</b><button type="button" data-act="${act}-plus" data-id="${i.id}" aria-label="More">+</button></span>`;
+const countField = (n = 1) => `<div class="field"><span class="lbl">Quantity</span><span class="stepper big" id="count-step"><button type="button" data-step="-1">−</button><input name="count" inputmode="numeric" value="${+n || 1}"><button type="button" data-step="1">+</button></span></div>`;
 
 // ---- Groceries helpers ----
 let lastStore = localStorage.getItem('ourhome-laststore') || '';
@@ -868,7 +950,9 @@ function countGrocery(name, storeName) {
   store.setSettings({ groceryCounts: { ...all, [k]: { name: name.trim(), count: (cur.count || 0) + 1, store: storeName || cur.store || '', hidden: false } } });
 }
 function addGrocery(name, storeName) {
-  store.add('items', { name: name.trim(), listId: 'groceries', store: storeName || null, arrived: false });
+  const same = S.items.find(i => i.listId === 'groceries' && !i.arrived && gKey(i.name) === gKey(name));
+  if (same) { store.update('items', same.id, { count: (+same.count || 1) + 1 }); return; }   // already on the list → one more
+  store.add('items', { name: name.trim(), listId: 'groceries', store: storeName || null, count: 1, arrived: false });
   countGrocery(name, storeName);
 }
 const knownStores = () => [...new Set([...Object.values(groceryCounts()).map(g => g.store), ...S.items.map(i => i.store)].filter(Boolean))].sort();
@@ -910,7 +994,7 @@ function listStats(id) {
   const spent = items.reduce((s, i) => s + (+(i.expenseId && S.expenses.find(e => e.id === i.expenseId)?.amount) || 0), 0);
   return {
     total: items.length, pending: pending.length, done: items.length - pending.length,
-    approx: pending.reduce((s, i) => s + (+i.approx || 0), 0), spent,
+    approx: pending.reduce((s, i) => s + (+i.approx || 0) * (+i.count || 1), 0), spent,
   };
 }
 const sortedLists = kind => S.lists.filter(l => l.kind === kind).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
@@ -1046,6 +1130,9 @@ function listHead(L) {
 function itemRow(i) {
   const src = SOURCES.find(s => s.id === i.source) || SOURCES[0];
   const bits = [src.label, ownerLabel(i.owner)];
+  const opts = (i.options || []).length;
+  if (opts > 1) bits.push(`${opts} options`);
+  if ((i.files || []).length) bits.push('📷 ' + i.files.length);
   if (i.approx) bits.push('~' + money(i.approx) + (i.approxCur ? ` (${fmtIn(i.approxOrig, i.approxCur)})` : ''));
   if (i.seller) bits.push('from ' + i.seller);
   if (i.link) bits.push('🔗');
@@ -1054,7 +1141,7 @@ function itemRow(i) {
   return `<div class="row ${i.arrived ? 'done' : ''}" style="padding:10px 16px">
     <button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Arrived">${i.arrived ? '✓' : ''}</button>
     <button class="main" style="text-align:left" data-act="edit-item" data-id="${i.id}">
-      <div class="title">${i.priority === 'high' && !i.arrived ? '<span class="prio high">High</span>' : ''}${i.priority === 'low' && !i.arrived ? '<span class="prio low">Low</span>' : ''}${esc(i.name)}</div>
+      <div class="title">${i.priority === 'high' && !i.arrived ? '<span class="prio high">High</span>' : ''}${i.priority === 'low' && !i.arrived ? '<span class="prio low">Low</span>' : ''}${esc(i.name)}${(+i.count || 1) > 1 ? ` <span class="qty">×${i.count}</span>` : ''}</div>
       <div class="meta">${esc(bits.join(' · '))}</div>
     </button>
   </div>`;
@@ -1083,7 +1170,7 @@ function renderGrocery(L) {
     <button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Got it">${i.arrived ? '✓' : ''}</button>
     <button class="main" style="text-align:left" data-act="edit-grocery" data-id="${i.id}">
       <div class="title">${esc(i.name)}${i.qty ? ` <span class="qty">${esc(i.qty)}</span>` : ''}</div>
-    </button></div>`;
+    </button>${i.arrived ? ((+i.count || 1) > 1 ? `<span class="qty">×${i.count}</span>` : '') : qtyStepper(i)}</div>`;
   // group what's still needed by store
   const groups = {};
   toGet.forEach(i => { (groups[i.store || ''] ||= []).push(i); });
@@ -1133,28 +1220,79 @@ async function shrinkImage(file) {
   return c.toDataURL('image/jpeg', 0.85);
 }
 
+// Small preview picture kept with the file's details, so lists can show thumbnails
+async function makeThumb(dataUrl) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+  const scale = 180 / Math.max(img.width, img.height);
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+async function uploadOne(file) {
+  if (file.size > 15e6) throw new Error(`${file.name} is too big (max 15 MB)`);
+  const isImg = file.type.startsWith('image/');
+  const dataUrl = isImg ? await shrinkImage(file) : await readAsDataURL(file);
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await store.putFile(id, dataUrl);
+  return {
+    id, name: isImg ? (file.name || 'Screenshot').replace(/\.[^.]+$/, '') + '.jpg' : file.name,
+    type: isImg ? 'image/jpeg' : (file.type || 'application/pdf'),
+    size: Math.round(dataUrl.length * 0.75), added: today(),
+    thumb: isImg ? await makeThumb(dataUrl) : null,
+  };
+}
 async function uploadFiles(list) {
   for (const file of list) {
-    if (file.size > 15e6) { toast(`${file.name} is too big (max 15 MB)`); continue; }
     toast(`Uploading ${file.name}…`);
     try {
-      const isImg = file.type.startsWith('image/');
-      const dataUrl = isImg ? await shrinkImage(file) : await readAsDataURL(file);
-      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const name = isImg ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : file.name;
-      await store.putFile(id, dataUrl);
-      const meta = { id, name, type: isImg ? 'image/jpeg' : (file.type || 'application/pdf'), size: Math.round(dataUrl.length * 0.75), added: today() };
+      const meta = await uploadOne(file);
       store.setSettings({ contractFiles: [...contractFiles(), meta] });
       toast('Uploaded ✓');
-    } catch (err) {
-      toast('Upload failed: ' + (err.message || err));
-    }
+    } catch (err) { toast('Upload failed: ' + (err.message || err)); }
   }
 }
 
+// Attachments inside a form (bookings, things to buy)
+const attThumbs = files => files.map(f => `<div class="att">
+    <button type="button" class="att-open" data-file="${f.id}">${f.thumb ? `<img src="${f.thumb}" alt="">` : `<span>${f.type.includes('pdf') ? 'PDF' : 'FILE'}</span>`}</button>
+    <button type="button" class="att-x" data-unattach="${f.id}" aria-label="Remove">×</button></div>`).join('');
+const attachField = (label, files) => `<div class="field"><span class="lbl">${label}</span>
+    <div class="atts" id="atts">${attThumbs(files)}
+      <label class="att add">+<input type="file" data-attach accept="image/*,application/pdf" multiple hidden></label></div></div>`;
+function initAttach(files) {
+  sheet._files = [...(files || [])];
+  sheet._removed = [];
+}
+function redrawAttach() {
+  const box = sheet.querySelector('#atts');
+  if (box) box.innerHTML = attThumbs(sheet._files) + `<label class="att add">+<input type="file" data-attach accept="image/*,application/pdf" multiple hidden></label>`;
+}
+sheet.addEventListener('change', async e => {
+  if (!e.target.matches('[data-attach]')) return;
+  for (const f of [...e.target.files]) {
+    toast(`Adding ${f.name || 'file'}…`);
+    try { sheet._files.push(await uploadOne(f)); redrawAttach(); toast('Added ✓'); }
+    catch (err) { toast(err.message || String(err)); }
+  }
+});
+sheet.addEventListener('click', e => {
+  const x = e.target.closest('[data-unattach]');
+  if (x) { const id = x.dataset.unattach; sheet._removed.push(id); sheet._files = sheet._files.filter(f => f.id !== id); redrawAttach(); return; }
+  const o = e.target.closest('[data-file]');
+  if (o) { const f = sheet._files.find(f => f.id === o.dataset.file); if (f) openFile(f); }
+});
+const finishAttach = () => { (sheet._removed || []).forEach(id => store.deleteFile(id)); return sheet._files || []; };
+
 const fileCache = {};
+const viewer = document.getElementById('viewer');
+viewer.addEventListener('click', e => {
+  if (e.target === viewer || e.target.closest('[data-close-viewer]')) { viewer.classList.add('hidden'); viewer.innerHTML = ''; }
+  if (e.target.closest('[data-share-viewer]') && viewer._file) navigator.share({ files: [viewer._file], title: viewer._file.name }).catch(() => {});
+});
 async function openFile(f) {
-  openSheet(`<h3>${esc(f.name)}</h3><div class="empty">Loading…</div>`);
+  viewer.classList.remove('hidden');
+  viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>${esc(f.name)}</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div><div class="empty">Loading…</div></div>`;
   try {
     const dataUrl = fileCache[f.id] || (fileCache[f.id] = await store.getFile(f.id));
     if (!dataUrl) throw new Error('file not found');
@@ -1162,17 +1300,16 @@ async function openFile(f) {
     const url = URL.createObjectURL(blob);
     const file = new File([blob], f.name, { type: f.type });
     const canShare = navigator.canShare && navigator.canShare({ files: [file] });
-    openSheet(`
-      <h3>${esc(f.name)}</h3>
+    viewer._file = file;
+    viewer.innerHTML = `<div class="viewer-box">
+      <div class="viewer-top"><b>${esc(f.name)}</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div>
       ${f.type.startsWith('image/') ? `<img class="doc-img" src="${url}" alt="">` : `<iframe class="doc-frame" src="${url}" title="${esc(f.name)}"></iframe>`}
       <div class="btn-row">
-        ${canShare ? `<button class="btn" data-sheet="share">Open / Save</button>` : `<a class="btn" href="${url}" download="${esc(f.name)}" target="_blank" rel="noopener">Open / Save</a>`}
-        <button class="btn light" data-sheet="close">Close</button>
-      </div>`, {
-      share: () => navigator.share({ files: [file], title: f.name }).catch(() => {}),
-    });
+        ${canShare ? `<button class="btn" data-share-viewer>Open / Save</button>` : `<a class="btn" href="${url}" download="${esc(f.name)}" target="_blank" rel="noopener">Open / Save</a>`}
+        <button class="btn light" data-close-viewer>Close</button>
+      </div></div>`;
   } catch (err) {
-    openSheet(`<h3>${esc(f.name)}</h3><div class="empty">Couldn't open it: ${esc(err.message || err)}</div><button class="btn light" data-sheet="close">Close</button>`);
+    viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>${esc(f.name)}</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div><div class="empty">Couldn't open it: ${esc(err.message || err)}</div></div>`;
   }
 }
 
@@ -1229,7 +1366,6 @@ function renderContract() {
 // ================================================================
 //  Bottom sheet (forms)
 // ================================================================
-const sheet = document.getElementById('sheet');
 const backdrop = document.getElementById('sheet-backdrop');
 let sheetHandlers = {};
 let sheetHandlersFor = null;   // optional hook for chips with dynamic names
@@ -1281,6 +1417,11 @@ sheet.addEventListener('click', e => {
   }
 });
 sheet.addEventListener('submit', e => e.preventDefault());
+sheet.addEventListener('click', e => {
+  const b = e.target.closest('[data-step]'); if (!b) return;
+  const inp = b.parentElement.querySelector('input');
+  inp.value = Math.max(1, (parseInt(inp.value) || 1) + +b.dataset.step);
+});
 sheet.addEventListener('input', e => {
   const n = e.target.name;
   if (n && sheet.querySelector(`.conv[data-for="${n}"]`)) updateConv(n);
@@ -1593,14 +1734,16 @@ function itemForm(i = null, listId = null) {
     <h3>${i ? 'Edit item' : 'What do we need?'}</h3>
     <div class="field"><input name="name" value="${esc(x.name)}" placeholder="e.g. Sofa, cat tree, curtains" ${i ? '' : 'autofocus'}></div>
     ${options.length > 1 ? `<div class="field"><span class="lbl">${big ? 'Part of ' + esc(big.name) : 'Project'}</span>${chips('listId', options, lid)}</div>` : ''}
-    <div class="field"><span class="lbl">Where from?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
+    ${countField(x.count)}
+    <div class="field"><span class="lbl">How are we getting it?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
     <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], x.owner)}</div>
     <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
-    ${amountField('approx', 'About how much?', (x.approxCur ? x.approxOrig : x.approx) || '', x.approxCur || mainCur(), { big: false })}
+    ${amountField('approx', 'About how much? (each)', (x.approxCur ? x.approxOrig : x.approx) || '', x.approxCur || mainCur(), { big: false })}
     <div class="field"><label>When does it arrive? (optional)</label><input type="date" name="eta" value="${esc(x.eta || '')}"></div>
-    <div class="field"><label>Where from? (optional)</label><input name="seller" value="${esc(x.seller || '')}" placeholder="e.g. IKEA, Facebook Marketplace, Amazon"></div>
-    <div class="field"><label>Link (optional)</label><input name="link" inputmode="url" value="${esc(x.link || '')}" placeholder="Paste the product page"></div>
-    ${i && i.link ? linkBtn(i.link) : ''}
+    <div class="field"><span class="lbl">Where to buy it · options</span>
+      <div id="opts"></div>
+      <button type="button" class="btn ghost small" data-sheet="add-opt" style="width:100%">+ Add an option</button></div>
+    ${attachField('Screenshots & pictures', x.files || [])}
     <button class="btn" data-sheet="save">${i ? 'Save' : 'Add to list'}</button>
     ${i ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
@@ -1610,25 +1753,66 @@ function itemForm(i = null, listId = null) {
       const chosen = chipVal('listId') || lid;
       let conv;
       try { conv = await readAmount('approx'); } catch (err) { return toast(err.message); }
-      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: conv.amount, approxOrig: conv.origAmount, approxCur: conv.origCurrency, eta: val('eta') || null, seller: val('seller') || null, link: val('link') || null, listId: chosen === 'home' ? null : chosen };
+      readOpts();
+      const keep = opts.filter(o => o.where || o.link || o.price);
+      const pick = keep.find(o => o.chosen) || (keep.length === 1 ? keep[0] : null);
+      const data = { name, count: Math.max(1, parseInt(val('count')) || 1), source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal',
+        approx: conv.amount, approxOrig: conv.origAmount, approxCur: conv.origCurrency, eta: val('eta') || null,
+        options: keep, seller: pick ? pick.where || null : null, link: pick ? pick.link || null : null, files: finishAttach(),
+        listId: chosen === 'home' ? null : chosen };
+      if (pick && pick.price && !num('approx')) data.approx = pick.price;
       if (i) store.update('items', i.id, data); else store.add('items', { ...data, arrived: false });
       closeSheet(); toast(i ? 'Saved' : 'Added to the list');
     },
     delete: () => { if (confirm(`Delete “${i.name}”?`)) { store.remove('items', i.id); closeSheet(); } },
+    'add-opt': () => { readOpts(); opts.push({ id: Math.random().toString(36).slice(2, 8), where: '', price: '', link: '', chosen: false }); drawOpts(); sheet.querySelector(`[name="opt-where-${opts.length - 1}"]`)?.focus(); },
+    'rm-opt': btn => { readOpts(); opts.splice(+btn.dataset.i, 1); drawOpts(); },
+    'pick-opt': btn => {
+      readOpts(); opts.forEach((o, k) => { o.chosen = k === +btn.dataset.i ? !o.chosen : false; });
+      const o = opts[+btn.dataset.i];
+      if (o.chosen && o.price) { sheet.querySelector('[name=approx]').value = o.price; sheet.querySelector('[name="approx-cur"]').value = mainCur(); updateConv('approx'); }
+      drawOpts();
+    },
   });
+  // ---- the "options" editor ----
+  let opts = (x.options && x.options.length) ? x.options.map(o => ({ ...o }))
+    : (x.seller || x.link) ? [{ id: 'o1', where: x.seller || '', link: x.link || '', price: x.approx || '', chosen: true }] : [];
+  function drawOpts() {
+    sheet.querySelector('#opts').innerHTML = opts.map((o, k) => `<div class="opt ${o.chosen ? 'chosen' : ''}">
+      <div class="opt-top">
+        <input name="opt-where-${k}" value="${esc(o.where || '')}" placeholder="Where? e.g. IKEA">
+        <input name="opt-price-${k}" class="opt-price" inputmode="decimal" value="${esc(o.price || '')}" placeholder="${cur()}">
+        <button type="button" class="icon-btn" data-sheet="rm-opt" data-i="${k}" aria-label="Remove">${svg(ICONS.close, 18)}</button>
+      </div>
+      <input name="opt-link-${k}" inputmode="url" value="${esc(o.link || '')}" placeholder="Link (optional)">
+      <div class="opt-actions">
+        <button type="button" class="link" data-sheet="pick-opt" data-i="${k}">${o.chosen ? '★ Our choice' : '☆ Choose this one'}</button>
+        ${o.link ? `<a class="link" href="${esc(/^https?:/i.test(o.link) ? o.link : 'https://' + o.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+      </div></div>`).join('');
+  }
+  function readOpts() {
+    opts.forEach((o, k) => {
+      o.where = val(`opt-where-${k}`) || '';
+      o.price = parseFloat((val(`opt-price-${k}`) || '').replace(',', '.')) || '';
+      o.link = val(`opt-link-${k}`) || '';
+    });
+  }
+  drawOpts();
+  initAttach(x.files);
 }
 
 function groceryForm(i) {
   openSheet(`
     <h3>Edit item</h3>
     <div class="field"><label>Item</label><input name="name" value="${esc(i.name)}"></div>
-    <div class="field"><label>How many / how much (optional)</label><input name="qty" value="${esc(i.qty || '')}" placeholder="e.g. 2, 1 kg, a big one"></div>
+    ${countField(i.count)}
+    <div class="field"><label>Size / details (optional)</label><input name="qty" value="${esc(i.qty || '')}" placeholder="e.g. 1 kg, the big one, low-fat"></div>
     <div class="field"><label>Where from? (optional)</label><input name="store" list="store-list-2" value="${esc(i.store || '')}" placeholder="e.g. Shufersal, the market">
       <datalist id="store-list-2">${knownStores().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
     <button class="btn" data-sheet="save">Save</button>
     <div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>
   `, {
-    save: () => { const name = val('name'); if (!name) return toast('Type the item'); store.update('items', i.id, { name, qty: val('qty') || null, store: val('store') || null }); closeSheet(); },
+    save: () => { const name = val('name'); if (!name) return toast('Type the item'); store.update('items', i.id, { name, count: Math.max(1, parseInt(val('count')) || 1), qty: val('qty') || null, store: val('store') || null }); closeSheet(); },
     delete: () => { store.remove('items', i.id); closeSheet(); },
   });
 }
@@ -1803,6 +1987,7 @@ function settingsForm() {
         names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
         pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
         currency: newCur,
+        flightKey: (sheet.querySelector('[name=flightKey]')?.value || '').trim() || null,
       });
       const d = chipVal('device'); if (d) localStorage.setItem('ourhome-device', d);
       closeSheet(); toast('Saved');
@@ -1815,6 +2000,19 @@ function settingsForm() {
       a.click();
     },
     signout: () => { if (confirm('Sign out?')) { closeSheet(); store.signOut(); } },
+    'flight-help': () => {
+      viewer.classList.remove('hidden');
+      viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>Free flight lookup key</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div>
+        <ol class="steps">
+          <li>Go to <b>rapidapi.com</b> and sign up (free; Google sign-in works).</li>
+          <li>Search for <b>AeroDataBox</b> and open it.</li>
+          <li>Tap <b>Pricing</b> → choose the free <b>Basic</b> plan → <b>Subscribe</b>. No card needed.</li>
+          <li>Go back to the AeroDataBox page → <b>Endpoints</b>. On the right you'll see <b>X-RapidAPI-Key</b> followed by a long code. Copy that code.</li>
+          <li>Paste it here in Settings → Flight lookup key → Save.</li>
+        </ol>
+        <p style="color:var(--muted)">The free plan allows a few hundred lookups a month, plenty for your trips. The key is saved only in your shared home data.</p>
+        <button class="btn light" data-close-viewer>Got it</button></div>`;
+    },
   };
 
   openSheet(`
@@ -1826,6 +2024,9 @@ function settingsForm() {
     </div>
     <div class="field"><span class="lbl">This phone belongs to</span>${chips('device', people(), device() || '')}
       <div class="hint">Used to color the balance: green when you're owed, red when you owe.</div></div>
+    <div class="field"><label>Flight lookup key (optional)</label>
+      <input name="flightKey" value="${esc(S.settings.flightKey || '')}" placeholder="Paste your AeroDataBox key" autocomplete="off" autocapitalize="off">
+      <div class="hint">Fills in flight details from the flight number. <button type="button" class="link" data-sheet="flight-help" style="padding:0;font-size:13px">How to get a free key</button></div></div>
     <div class="field"><label>Main currency</label><div class="select-wrap"><select name="currency" class="plain-select">
       ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (c0.currency || 'ILS') ? 'selected' : ''}>${c.label}</option>`).join('')}
     </select></div></div>
@@ -1913,6 +2114,9 @@ app.addEventListener('click', e => {
     case 'edit-place': placeForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'toggle-place': { const pl = S.tripitems.find(x => x.id === id); store.update('tripitems', id, { done: !pl.done }); break; }
     case 'add-booking': bookingForm(currentTrip()); break;
+    case 'qty-plus': case 'qty-minus': {
+      const it = S.items.find(x => x.id === id); const n = (+it.count || 1) + (el.dataset.act === 'qty-plus' ? 1 : -1);
+      if (n >= 1) store.update('items', id, { count: n }); break; }
     case 'add-social': pasteSocial(currentTrip()); break;
     case 'edit-social': socialForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'share-help': shareHelp(); break;

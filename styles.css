@@ -398,3 +398,36 @@ nav.tabs > button span { white-space: nowrap; }
 .steps li { margin-bottom: 6px; }
 code { background: var(--bg); padding: 2px 6px; border-radius: 6px; font-size: 14px; word-break: break-all; }
 #sheet p { line-height: 1.5; }
+
+/* ---------- Quantity stepper ---------- */
+.stepper { display: inline-flex; align-items: center; gap: 2px; flex: none; background: var(--bg); border-radius: 999px; padding: 2px; }
+.stepper button { width: 34px; height: 34px; border-radius: 50%; font-size: 20px; font-weight: 700; color: var(--c); }
+.stepper button:active { background: var(--c-soft); }
+.stepper b { min-width: 22px; text-align: center; font-size: 16px; }
+.stepper.big { padding: 4px; }
+.stepper.big button { width: 48px; height: 48px; font-size: 24px; background: var(--card); }
+.stepper.big input { width: 64px; min-height: 44px; text-align: center; font-size: 20px; font-weight: 700; border: none; background: transparent; padding: 0; }
+
+/* ---------- Attachments ---------- */
+.atts { display: flex; flex-wrap: wrap; gap: 10px; }
+.att { position: relative; width: 78px; height: 78px; border-radius: 14px; overflow: visible; }
+.att-open { width: 78px; height: 78px; border-radius: 14px; overflow: hidden; background: var(--c-soft); display: grid; place-items: center; color: var(--c); font-weight: 800; font-size: 13px; padding: 0; }
+.att-open img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.att-x { position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; border-radius: 50%; background: var(--text); color: #fff; font-size: 16px; line-height: 1; }
+.att.add { display: grid; place-items: center; border: 2px dashed var(--c2); color: var(--c); font-size: 30px; cursor: pointer; background: transparent; }
+
+/* ---------- Full-screen file viewer ---------- */
+#viewer { position: fixed; inset: 0; z-index: 40; background: #343A34cc; display: flex; align-items: flex-end; justify-content: center; }
+.viewer-box { background: var(--card); width: 100%; max-width: 600px; max-height: 94vh; overflow-y: auto; border-radius: 24px 24px 0 0; padding: 14px 18px calc(18px + var(--safe-b)); }
+.viewer-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.viewer-top b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Buying options ---------- */
+.opt { background: var(--bg); border: 1.5px solid var(--line); border-radius: 16px; padding: 10px; margin-bottom: 10px; }
+.opt.chosen { border-color: var(--c); background: var(--c-soft); }
+.opt input { width: 100%; min-height: 44px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; padding: 6px 12px; font-size: 16px; outline: none; color: var(--text); }
+.opt-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.opt-top input:first-child { flex: 1; min-width: 0; }
+.opt-top .opt-price { width: 90px; flex: none; }
+.opt-actions { display: flex; justify-content: space-between; margin-top: 4px; }
+.opt-actions .link { font-size: 15px; text-decoration: none; }
