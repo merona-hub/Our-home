@@ -8,13 +8,13 @@ There are 4 steps. Steps 1 and 4 take a couple of minutes. Steps 2–3 take abou
 
 This gives the app a web address you can open on your phone.
 
-1. On a computer, open **github.com/merona-hub/our-home** and sign in.
+1. On a computer, open **github.com/merona-hub/Our-home** and sign in.
 2. Click **Settings** (top of the page, the ⚙️ tab).
 3. In the left menu, click **Pages**.
 4. Under **Build and deployment → Source**, choose **Deploy from a branch**.
 5. Under **Branch**, choose **`claude/household-expense-app-wzoprv`**, leave the folder as **`/ (root)`**, and click **Save**.
 6. Wait 1–2 minutes and refresh the page. A link will appear at the top:
-   **`https://merona-hub.github.io/our-home/`** — that's your app.
+   **`https://merona-hub.github.io/Our-home/`** — that's your app.
 
 > If GitHub says Pages isn't available, the repository is probably private.
 > Free accounts need it public: **Settings → General → scroll to the bottom → Change visibility → Public**.
@@ -75,7 +75,7 @@ Now only those two emails can open your home's data.
 
 ## Step 4 — On each phone
 
-1. Open **`https://merona-hub.github.io/our-home/`**
+1. Open **`https://merona-hub.github.io/Our-home/`**
 2. Tap **First time? Create account**, using the email from step 3 and a password (at least 6 characters). Next time just **Sign in** — you'll stay signed in.
 3. Add it to the home screen:
    - **iPhone (Safari):** tap the **Share** button (square with an arrow) → **Add to Home Screen** → **Add**.
