@@ -178,6 +178,7 @@ let tab = localStorage.getItem('ourhome-tab') || 'money';
 let homeView = localStorage.getItem('ourhome-homeview') || 'bills';          // 'bills' or 'contract'
 if (tab === 'bills' || tab === 'contract') { homeView = tab; tab = 'home'; }   // old tab names
 let travelView = localStorage.getItem('ourhome-travelview') || null;         // null = all trips, or a trip id
+let tripSeg = localStorage.getItem('ourhome-tripseg') || 'money';             // money · plan · places · bookings
 let showArrived = false;
 let shopView = localStorage.getItem('ourhome-shopview') || null;   // null = overview, 'home', or a list id
 const app = document.getElementById('app');
@@ -292,7 +293,8 @@ function render() {
   if (ci && ci.remindNow && !(tab === 'home' && homeView === 'contract')) {
     banners.push(`<div class="banner alert">📄 <b>Contract reminder:</b> tell the landlord by <b>${fmtDateLong(ci.deadline)}</b> if you're renewing or leaving (${ci.daysToDeadline} days left).</div>`);
   }
-  const qa = document.activeElement && document.activeElement.closest && document.activeElement.closest('#quick-add') ? document.activeElement.value : null;
+  const qaEl = document.activeElement && document.activeElement.closest && document.activeElement.closest('#quick-add') ? document.activeElement : null;
+  const qa = qaEl ? { name: qaEl.name, value: qaEl.value } : null;
   app.innerHTML = `
     <header>
       <div>
@@ -307,12 +309,12 @@ function render() {
       <div class="fab-slot"><button class="fab" data-act="${fabAction()}" aria-label="Add">${svg(ICONS.plus, 30)}</button></div>
       ${TABS.slice(2).map(tabBtn).join('')}
     </nav>`;
-  if (qa !== null) { const q = app.querySelector('#quick-add input'); if (q) { q.value = qa; q.focus(); } }
+  if (qa) { const q = app.querySelector(`#quick-add [name="${qa.name}"]`); if (q) { q.value = qa.value; q.focus(); } }
 }
 
 function fabAction() {
   if (tab === 'home') return homeView === 'bills' ? 'add-bill' : 'add-expense';
-  if (tab === 'travel') return currentTrip() ? 'add-expense' : 'new-trip';
+  if (tab === 'travel') return !currentTrip() ? 'new-trip' : ({ plan: 'add-plan', places: 'add-place', bookings: 'add-booking' }[tripSeg] || 'add-expense');
   if (tab !== 'shop') return 'add-expense';
   const L = currentList();
   if (!L) return 'shop-add';
@@ -381,9 +383,17 @@ const tripSpent = t => S.expenses.filter(e => e.tripId === t.id && e.type !== 't
 function renderTravel() {
   const t = currentTrip();
   if (t) {
-    return `<div class="list-head"><button class="back" data-act="trips-back">${svg(ICONS.back, 22)}<span>Trips</span></button></div>
-      ${tripSummary(t)}
-      ${expenseList(S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer'), 'No expenses for this trip yet.')}`;
+    const segs = [['money', 'Money'], ['plan', 'Plan'], ['places', 'Places'], ['bookings', 'Bookings']];
+    const body = tripSeg === 'plan' ? renderPlan(t) : tripSeg === 'places' ? renderPlaces(t) : tripSeg === 'bookings' ? renderBookings(t)
+      : tripSummary(t) + expenseList(S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer'), 'No expenses for this trip yet.');
+    return `<div class="list-head">
+        <button class="back" data-act="trips-back">${svg(ICONS.back, 22)}<span>Trips</span></button>
+        <button class="icon-btn" data-act="edit-trip" data-id="${t.id}" aria-label="Edit trip">${svg(ICONS.edit, 20)}</button>
+      </div>
+      <h2 class="list-title" style="margin-bottom:2px">${esc(t.name)}</h2>
+      <div class="trip-sub">${fmtRange(t.start, t.end)}${t.currency && t.currency !== mainCur() ? ' · ' + t.currency : ''}</div>
+      <div class="seg seg4">${segs.map(([k, l]) => `<button class="${tripSeg === k ? 'on' : ''}" data-act="trip-seg" data-id="${k}">${l}</button>`).join('')}</div>
+      ${body}`;
   }
   travelView = null;
   const trips = sortedTrips();
@@ -416,16 +426,152 @@ function tripSummary(t) {
   ex.forEach(e => { paid[e.paidBy] = (paid[e.paidBy] || 0) + (+e.amount || 0); });
   const cats = Object.entries(byCat).sort((x, y) => y[1] - x[1]);
   return `<div class="card trip-card">
-    <div class="trip-top">
-      <div><div class="trip-name">${esc(t.name)}</div><div class="meta">${fmtRange(t.start, t.end)}${t.currency && t.currency !== mainCur() ? ' · ' + t.currency : ''}</div></div>
-      <button class="icon-btn" data-act="edit-trip" data-id="${t.id}" aria-label="Edit trip">${svg(ICONS.edit, 20)}</button>
-    </div>
-    <div class="trip-spent"><span class="big-n">${money(spent)}</span>${budget ? `<span class="of"> of ${money(budget)}</span>` : ' spent'}</div>
+    <div class="trip-spent" style="margin-top:0"><span class="big-n">${money(spent)}</span>${budget ? `<span class="of"> of ${money(budget)}</span>` : ' spent'}</div>
     ${budget ? `<div class="bar ${over ? 'over' : ''}"><span style="width:${Math.min(100, Math.round(spent / budget * 100))}%"></span></div>
       <div class="meta" style="margin-top:6px">${over ? `<b style="color:var(--danger)">${money(spent - budget)} over budget</b>` : `${money(budget - spent)} left`}</div>` : ''}
     ${cats.length ? `<div class="cat-list">${cats.map(([c, v]) => `<div class="cat-row"><span>${cat(c).icon} ${esc(cat(c).label)}</span><b>${money(v)}</b></div>`).join('')}</div>` : ''}
     ${spent ? `<div class="meta" style="margin-top:10px">${esc(nm('a'))} paid ${money(paid.a)} · ${esc(nm('b'))} paid ${money(paid.b)}</div>` : ''}
   </div>`;
+}
+
+// ---- Trip plan, places & bookings (collection "tripitems") ----
+const BOOKING_TYPES = [
+  { id: 'flight', label: 'Flight', icon: '✈️', cat: 'flights' },
+  { id: 'hotel', label: 'Hotel', icon: '🏨', cat: 'hotel' },
+  { id: 'car', label: 'Car', icon: '🚗', cat: 'transport' },
+  { id: 'train', label: 'Train / bus', icon: '🚆', cat: 'transport' },
+  { id: 'activity', label: 'Activity', icon: '🎟️', cat: 'activities' },
+  { id: 'restaurant', label: 'Restaurant', icon: '🍽️', cat: 'food' },
+  { id: 'other', label: 'Other', icon: '📌', cat: 'other' },
+];
+const btype = id => BOOKING_TYPES.find(b => b.id === id) || BOOKING_TYPES[BOOKING_TYPES.length - 1];
+const tripItems = (t, kind) => (S.tripitems || []).filter(x => x.tripId === t.id && x.kind === kind);
+const fmtDay = d => parseDate(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+const linkBtn = url => url ? `<a class="btn light" href="${esc(/^https?:/i.test(url) ? url : 'https://' + url)}" target="_blank" rel="noopener">Open link ↗</a>` : '';
+
+function renderPlan(t) {
+  const plans = tripItems(t, 'plan');
+  const books = tripItems(t, 'booking').filter(b => b.date);
+  const days = new Set([...plans.map(p => p.date || ''), ...books.map(b => b.date)]);
+  if (t.start && t.end) for (let d = t.start; d <= t.end && days.size < 120; d = addDays(d, 1)) days.add(d);
+  const sorted = [...days].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+  if (!plans.length && !books.length && !(t.start && t.end)) return `<div class="empty">Add the trip dates (✏️) to get a day-by-day plan,<br>or tap <b>+</b> to add something.</div>`;
+  return sorted.map(d => {
+    const rows = [
+      ...books.filter(b => b.date === d).map(b => ({ time: b.time || '', html: `<button class="row" data-act="edit-booking" data-id="${b.id}"><span class="ico">${btype(b.type).icon}</span><span class="main"><div class="title">${esc(b.title)}</div><div class="meta">${[b.time, 'Booking', b.code ? '#' + b.code : ''].filter(Boolean).map(esc).join(' · ')}</div></span></button>` })),
+      ...plans.filter(p => (p.date || '') === d).map(p => ({ time: p.time || '', html: swipeable('tripitems', p.id, `<button class="row" data-act="edit-plan" data-id="${p.id}"><span class="time">${esc(p.time || '')}</span><span class="main"><div class="title">${esc(p.title)}</div>${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ''}</span></button>`) })),
+    ].sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
+    const n = t.start && d ? daysBetween(t.start, d) + 1 : 0;
+    return `<div class="month"><span>${d ? `${n > 0 && (!t.end || d <= t.end) ? `Day ${n} · ` : ''}${fmtDay(d)}` : 'No date yet'}</span><button class="link" data-act="add-plan" data-id="${d}">+ Add</button></div>
+      ${rows.length ? `<div class="list">${rows.map(r => r.html).join('')}</div>` : ''}`;
+  }).join('');
+}
+
+function renderPlaces(t) {
+  const all = tripItems(t, 'place');
+  const todo = all.filter(p => !p.done).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const done = all.filter(p => p.done);
+  const row = p => `<div class="row ${p.done ? 'done' : ''}" style="padding:10px 16px">
+      <button class="check ${p.done ? 'on' : ''}" data-act="toggle-place" data-id="${p.id}" aria-label="Been there">${p.done ? '✓' : ''}</button>
+      <button class="main" style="text-align:left" data-act="edit-place" data-id="${p.id}"><div class="title">${esc(p.title)}</div>${p.notes || p.link ? `<div class="meta">${esc([p.notes, p.link ? '🔗 link' : ''].filter(Boolean).join(' · '))}</div>` : ''}</button></div>`;
+  return `${todo.length ? `<div class="month"><span>Want to go (${todo.length})</span></div><div class="list">${todo.map(p => swipeable('tripitems', p.id, row(p))).join('')}</div>`
+      : `<div class="empty">${all.length ? 'You’ve been everywhere on the list 🎉' : 'Restaurants, sights, shops, anything you don’t want to miss.'}<br>Tap <b>+</b> to add a place.</div>`}
+    ${done.length ? `<div class="month"><span>Been there (${done.length})</span></div><div class="list">${done.map(p => swipeable('tripitems', p.id, row(p))).join('')}</div>` : ''}`;
+}
+
+function renderBookings(t) {
+  const all = tripItems(t, 'booking').sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  if (!all.length) return `<div class="empty">Flights, hotels, car rental, tickets…<br>Tap <b>+</b> to add a booking.</div>`;
+  return `<div class="list">${all.map(b => swipeable('tripitems', b.id, `<button class="row" data-act="edit-booking" data-id="${b.id}">
+      <span class="ico">${btype(b.type).icon}</span>
+      <span class="main"><div class="title">${esc(b.title)}</div><div class="meta">${esc([b.date ? fmtDate(b.date) + (b.endDate ? ' – ' + fmtDate(b.endDate) : '') : 'No date', b.time, b.code ? '#' + b.code : ''].filter(Boolean).join(' · '))}</div></span>
+      ${b.cost ? `<span class="amt" style="color:var(--text)">${money(b.cost)}</span>` : ''}</button>`)).join('')}</div>`;
+}
+
+function planForm(t, p = null, presetDate = '') {
+  const x = p || { date: presetDate || (t.start && today() >= t.start && (!t.end || today() <= t.end) ? today() : t.start) || '', time: '', title: '', notes: '' };
+  openSheet(`
+    <h3>${p ? 'Edit plan' : 'Add to the plan'}</h3>
+    <div class="field"><label>What?</label><input name="title" value="${esc(x.title)}" placeholder="e.g. Fushimi Inari at sunrise" ${p ? '' : 'autofocus'}></div>
+    <div class="split2">
+      <div class="field"><label>Day</label><input type="date" name="date" value="${esc(x.date || '')}"></div>
+      <div class="field"><label>Time (optional)</label><input type="time" name="time" value="${esc(x.time || '')}"></div>
+    </div>
+    <div class="field"><label>Notes / address (optional)</label><textarea name="notes">${esc(x.notes || '')}</textarea></div>
+    <button class="btn" data-sheet="save">${p ? 'Save' : 'Add'}</button>
+    ${p ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
+  `, {
+    save: () => {
+      const title = val('title'); if (!title) return toast('What’s the plan?');
+      const data = { title, date: val('date') || null, time: val('time') || null, notes: val('notes') || null };
+      if (p) store.update('tripitems', p.id, data); else store.add('tripitems', { ...data, tripId: t.id, kind: 'plan' });
+      closeSheet();
+    },
+    delete: () => { store.remove('tripitems', p.id); closeSheet(); },
+  });
+}
+
+function placeForm(t, p = null) {
+  const x = p || { title: '', notes: '', link: '' };
+  openSheet(`
+    <h3>${p ? 'Edit place' : 'A place we want to go'}</h3>
+    <div class="field"><label>Place</label><input name="title" value="${esc(x.title)}" placeholder="e.g. Ichiran ramen, teamLab" ${p ? '' : 'autofocus'}></div>
+    <div class="field"><label>Notes (optional)</label><textarea name="notes" placeholder="Area, opening hours, why we want to go…">${esc(x.notes || '')}</textarea></div>
+    <div class="field"><label>Link (optional)</label><input name="link" inputmode="url" value="${esc(x.link || '')}" placeholder="Google Maps, website…"></div>
+    ${p ? linkBtn(p.link) : ''}
+    <div class="btn-row"><button class="btn" data-sheet="save">${p ? 'Save' : 'Add'}</button></div>
+    ${p ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
+  `, {
+    save: () => {
+      const title = val('title'); if (!title) return toast('Which place?');
+      const data = { title, notes: val('notes') || null, link: val('link') || null };
+      if (p) store.update('tripitems', p.id, data); else store.add('tripitems', { ...data, tripId: t.id, kind: 'place', done: false });
+      closeSheet();
+    },
+    delete: () => { store.remove('tripitems', p.id); closeSheet(); },
+  });
+}
+
+function bookingForm(t, b = null) {
+  const x = b || { type: 'hotel', title: '', date: t.start || '', endDate: '', time: '', code: '', link: '', notes: '', cost: '' };
+  const linked = b && b.expenseId && S.expenses.find(e => e.id === b.expenseId);
+  openSheet(`
+    <h3>${b ? 'Edit booking' : 'New booking'}</h3>
+    <div class="field"><span class="lbl">Type</span>${chips('btype', BOOKING_TYPES.map(o => ({ v: o.id, label: o.icon + ' ' + o.label })), x.type)}</div>
+    <div class="field"><label>Name</label><input name="title" value="${esc(x.title)}" placeholder="e.g. Ryokan in Kyoto, TLV → Tokyo"></div>
+    <div class="split2">
+      <div class="field"><label>Date</label><input type="date" name="date" value="${esc(x.date || '')}"></div>
+      <div class="field"><label>Until (optional)</label><input type="date" name="endDate" value="${esc(x.endDate || '')}"></div>
+    </div>
+    <div class="field"><label>Time (optional)</label><input type="time" name="time" value="${esc(x.time || '')}"></div>
+    <div class="field"><label>Confirmation number (optional)</label><input name="code" value="${esc(x.code || '')}" autocapitalize="characters"></div>
+    <div class="field"><label>Link (optional)</label><input name="link" inputmode="url" value="${esc(x.link || '')}" placeholder="Booking page, ticket…"></div>
+    <div class="field"><label>Notes (optional)</label><textarea name="notes">${esc(x.notes || '')}</textarea></div>
+    ${linked ? `<div class="banner">Cost: ${money(linked.amount)}, already in the trip expenses. Edit it there.</div>`
+      : `${amountField('cost', 'Cost (optional)', b && b.costCur ? b.costOrig : (b?.cost || ''), (b && b.costCur) || t.currency || mainCur(), { big: false })}
+      <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), defPayer())}</div>
+      <label class="tick"><input type="checkbox" name="toexp" checked> Add the cost to the trip expenses</label>`}
+    ${b ? linkBtn(b.link) : ''}
+    <div class="btn-row"><button class="btn" data-sheet="save">${b ? 'Save' : 'Add booking'}</button></div>
+    ${b ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
+  `, {
+    save: async () => {
+      const title = val('title'); if (!title) return toast('Give the booking a name');
+      const type = chipVal('btype');
+      const data = { type, title, date: val('date') || null, endDate: val('endDate') || null, time: val('time') || null, code: val('code') || null, link: val('link') || null, notes: val('notes') || null };
+      if (!linked && num('cost') > 0) {
+        let conv;
+        try { conv = await readAmount('cost', data.date); } catch (err) { return toast(err.message); }
+        Object.assign(data, { cost: conv.amount, costOrig: conv.origAmount, costCur: conv.origCurrency });
+        if (sheet.querySelector('[name=toexp]')?.checked) {
+          data.expenseId = await store.add('expenses', { ...conv, category: btype(type).cat, note: title, paidBy: chipVal('paidBy'), date: data.date || today(), splitA: 50, tripId: t.id });
+        }
+      }
+      if (b) store.update('tripitems', b.id, data); else store.add('tripitems', { ...data, tripId: t.id, kind: 'booking' });
+      closeSheet(); toast(data.expenseId ? 'Saved & added to expenses ✓' : 'Saved');
+    },
+    delete: () => { if (confirm(`Delete “${b.title}”?${linked ? ' (Its expense stays.)' : ''}`)) { store.remove('tripitems', b.id); closeSheet(); } },
+  });
 }
 
 function tripForm(t = null) {
@@ -456,6 +602,7 @@ function tripForm(t = null) {
     delete: () => {
       if (!confirm(`Delete “${t.name}”? Its expenses stay in the list.`)) return;
       S.expenses.filter(e => e.tripId === t.id).forEach(e => store.update('expenses', e.id, { tripId: null }));
+      (S.tripitems || []).filter(x => x.tripId === t.id).forEach(x => store.remove('tripitems', x.id));
       store.remove('trips', t.id);
       closeSheet(); setTravelView(null);
     },
@@ -530,6 +677,38 @@ function renderBills() {
 
 // ---------------- Shopping ----------------
 const listOf = i => i.listId || 'home';
+
+// ---- Groceries helpers ----
+let lastStore = localStorage.getItem('ourhome-laststore') || '';
+let editRegulars = false;
+const REGULAR_AFTER = 3;                          // added this many times → becomes a one-tap regular
+const gKey = n => n.trim().toLowerCase();
+const groceryCounts = () => S.settings.groceryCounts || {};
+function countGrocery(name, storeName) {
+  const k = gKey(name), all = groceryCounts(), cur = all[k] || {};
+  store.setSettings({ groceryCounts: { ...all, [k]: { name: name.trim(), count: (cur.count || 0) + 1, store: storeName || cur.store || '', hidden: false } } });
+}
+function addGrocery(name, storeName) {
+  store.add('items', { name: name.trim(), listId: 'groceries', store: storeName || null, arrived: false });
+  countGrocery(name, storeName);
+}
+const knownStores = () => [...new Set([...Object.values(groceryCounts()).map(g => g.store), ...S.items.map(i => i.store)].filter(Boolean))].sort();
+function groceryAddBox() {
+  const onList = new Set(S.items.filter(i => i.listId === 'groceries' && !i.arrived).map(i => gKey(i.name)));
+  const regulars = Object.entries(groceryCounts())
+    .filter(([k, g]) => g.count >= REGULAR_AFTER && !g.hidden && !onList.has(k))
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 16);
+  return `<form id="quick-add" class="quick-add-box" data-list="groceries" autocomplete="off">
+      <div class="quick-add">
+        <input name="q" placeholder="Add groceries, e.g. Milk" enterkeyhint="done">
+        <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
+      </div>
+      <input name="store" class="store-in" list="store-list" value="${esc(lastStore)}" placeholder="Where from? (optional)" enterkeyhint="done">
+      <datalist id="store-list">${knownStores().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    </form>
+    ${regulars.length ? `<div class="regulars-head"><span>Regulars · tap to add</span><button class="link" data-act="edit-regulars">${editRegulars ? 'Done' : 'Edit'}</button></div>
+      <div class="regulars">${regulars.map(([k, g]) => `<button class="reg ${editRegulars ? 'editing' : ''}" data-act="${editRegulars ? 'remove-regular' : 'add-regular'}" data-id="${esc(k)}">${editRegulars ? '✕ ' : '+ '}${esc(g.name)}</button>`).join('')}</div>` : ''}`;
+}
 const HOME_LIST = { id: 'home', kind: 'home', name: 'General' };   // home items not tied to a sub-project
 const GROCERY_LIST = { id: 'groceries', kind: 'grocery', name: 'Groceries' };   // one built-in grocery list
 const listById = id => id === 'home' ? HOME_LIST : id === 'groceries' ? GROCERY_LIST : S.lists.find(l => l.id === id);
@@ -570,13 +749,28 @@ function renderShop() {
   return renderItemList(L);
 }
 
-function trackerCard(st) {
-  return `<div class="card">
+const hasTracker = (st, L) => st.total || +L.budget || L.deadline;
+function deadlineText(L, st) {
+  if (!L.deadline) return '';
+  const d = daysBetween(today(), L.deadline);
+  const finished = st.total && st.done === st.total;
+  const when = finished ? 'all done ✓' : d > 1 ? `${d} days left` : d === 1 ? 'tomorrow' : d === 0 ? 'today' : `${-d} days late`;
+  return `<span class="${d < 0 && !finished ? 'late-txt' : ''}">Deadline ${fmtDateLong(L.deadline)} · ${when}</span>`;
+}
+function trackerCard(st, L = {}) {
+  const budget = +L.budget || 0;
+  const over = budget && st.spent > budget;
+  return `<div class="card tracker">
     <div class="split2">
       <div class="stat"><div class="n">${st.done} / ${st.total}</div><div class="t">done</div></div>
-      <div class="stat"><div class="n">${money(st.spent)}</div><div class="t">spent${st.approx ? ` · ~${money(st.approx)} to go` : ''}</div></div>
+      <div class="stat"><div class="n">${money(st.spent)}</div><div class="t">${budget ? 'of ' + money(budget) : 'spent'}</div></div>
     </div>
-    <div class="bar" style="margin-top:12px"><span style="width:${st.total ? Math.round(st.done / st.total * 100) : 0}%"></span></div>
+    <div class="bar-label">Progress</div>
+    <div class="bar"><span style="width:${st.total ? Math.round(st.done / st.total * 100) : 0}%"></span></div>
+    ${budget ? `<div class="bar-label">Budget · ${over ? `<b class="late-txt">${money(st.spent - budget)} over</b>` : `${money(budget - st.spent)} left`}${st.approx ? ` · ~${money(st.approx)} still to buy` : ''}</div>
+      <div class="bar ${over ? 'over' : 'budget'}"><span style="width:${Math.min(100, Math.round(st.spent / budget * 100))}%"></span></div>`
+      : st.approx ? `<div class="bar-label">~${money(st.approx)} still to buy</div>` : ''}
+    ${L.deadline ? `<div class="bar-label" style="margin-top:12px">${deadlineText(L, st)}</div>` : ''}
   </div>`;
 }
 
@@ -587,9 +781,9 @@ function renderBigProject(L) {
   const pending = own.filter(i => !i.arrived).sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999'));
   const arrived = own.filter(i => i.arrived);
   return `${listHead(L)}
-    ${all.total ? trackerCard(all) : ''}
+    ${hasTracker(all, L) ? trackerCard(all, L) : ''}
     <div class="month"><span>Sub-projects</span><button class="link" data-act="new-sub" data-id="${L.id}">+ New</button></div>
-    ${subs.length ? `<div class="list">${subs.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st)), st.total ? st.done / st.total : null); }).join('')}</div>`
+    ${subs.length ? `<div class="list">${subs.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st, p)), st.total ? st.done / st.total : null); }).join('')}</div>`
       : `<button class="empty-card" data-act="new-sub" data-id="${L.id}">Split it into parts, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}
     ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span></div>
       ${pending.length ? `<div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}
@@ -610,20 +804,20 @@ function renderShopOverview() {
   const bigs = bigProjects();
   return `
     <div class="month"><span>Groceries</span>${g.total ? `<button class="link" data-act="open-list" data-id="groceries">${g.pending ? `${g.pending} to get` : 'All in the cart ✓'} ›</button>` : ''}</div>
-    <form id="quick-add" class="quick-add" data-list="groceries" autocomplete="off">
-      <input name="q" placeholder="Add groceries, e.g. Milk" enterkeyhint="done">
-      <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
-    </form>
+    ${groceryAddBox()}
 
     <div class="month"><span>Projects</span><button class="link" data-act="new-list" data-id="project">+ New project</button></div>
     ${bigs.length ? `<div class="list">${bigs.map(b => { const st = listStats(treeIds(b)); const n = subProjects(b.id).length;
-        return listCard(b.id, 'project', b.name, esc([n ? `${n} sub-project${n > 1 ? 's' : ''}` : '', st.total ? statsMeta(st) : ''].filter(Boolean).join(' · ') || 'Nothing yet'), st.total ? st.done / st.total : null); }).join('')}</div>`
+        return listCard(b.id, 'project', b.name, esc([n ? `${n} sub-project${n > 1 ? 's' : ''}` : '', (st.total || +b.budget || b.deadline) ? statsMeta(st, b) : ''].filter(Boolean).join(' · ') || 'Nothing yet'), st.total ? st.done / st.total : null); }).join('')}</div>`
       : `<button class="empty-card" data-act="new-list" data-id="project">Create a big project, like <i>“Home”</i> or <i>“Wedding”</i>, then split it into parts like <i>“Living room”</i>. Each one tracks what's done and what's been spent.<br><b>Tap to create one</b></button>`}`;
 }
 
-const statsMeta = st => st.total
-  ? `${st.done} of ${st.total} done${st.spent ? ' · ' + money(st.spent) + ' spent' : ''}${st.approx ? ' · ~' + money(st.approx) + ' to go' : ''}`
-  : 'Nothing yet';
+const statsMeta = (st, L = {}) => [
+  st.total ? `${st.done} of ${st.total} done` : '',
+  +L.budget ? `${money(st.spent)} of ${money(L.budget)}` : st.spent ? money(st.spent) + ' spent' : '',
+  !+L.budget && st.approx ? '~' + money(st.approx) + ' to go' : '',
+  L.deadline ? 'due ' + fmtDate(L.deadline) : '',
+].filter(Boolean).join(' · ') || 'Nothing yet';
 
 function listHead(L) {
   const parent = L.parentId && S.lists.find(l => l.id === L.parentId);
@@ -655,7 +849,7 @@ function renderItemList(L) {
   const pending = items.filter(i => !i.arrived).sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
   const arrived = items.filter(i => i.arrived).sort((x, y) => (y.arrivedAt || '').localeCompare(x.arrivedAt || ''));
   const st = listStats(L.id);
-  const summary = L.kind === 'project' && st.total ? trackerCard(st) : '';
+  const summary = L.kind === 'project' && hasTracker(st, L) ? trackerCard(st, L) : '';
   return `${listHead(L)}${summary}
     ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${st.approx ? '~' + money(st.approx) : ''}</span></div>
       <div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>`
@@ -673,12 +867,16 @@ function renderGrocery(L) {
     <button class="main" style="text-align:left" data-act="edit-grocery" data-id="${i.id}">
       <div class="title">${esc(i.name)}${i.qty ? ` <span class="qty">${esc(i.qty)}</span>` : ''}</div>
     </button></div>`;
+  // group what's still needed by store
+  const groups = {};
+  toGet.forEach(i => { (groups[i.store || ''] ||= []).push(i); });
+  const names = Object.keys(groups).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+  const multi = names.length > 1 || (names.length === 1 && names[0] !== '');
   return `${listHead(L)}
-    <form id="quick-add" class="quick-add" autocomplete="off">
-      <input name="q" placeholder="Add an item, e.g. Milk" enterkeyhint="done">
-      <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
-    </form>
-    ${toGet.length ? `<div class="list">${toGet.map(i => swipeable('items', i.id, row(i))).join('')}</div>` : `<div class="empty">${items.length ? 'Everything is in the cart 🎉' : 'Type above to add things.'}</div>`}
+    ${groceryAddBox()}
+    ${toGet.length ? names.map(n => `${multi ? `<div class="month"><span>${n ? esc(n) : 'Anywhere'}</span></div>` : ''}
+      <div class="list">${groups[n].map(i => swipeable('items', i.id, row(i))).join('')}</div>`).join('')
+      : `<div class="empty">${items.length ? 'Everything is in the cart 🎉' : 'Type above to add things.'}</div>`}
     ${got.length ? `<div class="month"><span>In the cart (${got.length})</span></div>
       <div class="list">${got.map(i => swipeable('items', i.id, row(i))).join('')}</div>
       <div class="btn-row"><button class="btn" data-act="done-shopping" data-id="${L.id}">Done shopping</button></div>` : ''}`;
@@ -1000,7 +1198,7 @@ function swipeDelete(col, id) {
     });
   } else {
     store.remove(col, id);
-    toast(`“${obj.name}” deleted`, () => store.restore(col, id, data));
+    toast(`“${obj.name || obj.title}” deleted`, () => store.restore(col, id, data));
   }
 }
 
@@ -1141,14 +1339,17 @@ function listForm(L = null, kind = L?.kind, parentId = L?.parentId || null) {
     <h3>${L ? 'Edit ' + word : 'New ' + word}</h3>
     <div class="field"><label>Name</label>
       <input name="name" value="${esc(L?.name || '')}" placeholder="${parentId ? 'e.g. Living room' : 'e.g. Home, Wedding'}" ${L ? '' : 'autofocus'}></div>
+    <div class="field"><label>Budget (${cur()}, optional)</label><input name="budget" inputmode="decimal" value="${esc(L?.budget || '')}" placeholder="0"></div>
+    <div class="field"><label>Deadline (optional)</label><input type="date" name="deadline" value="${esc(L?.deadline || '')}"></div>
     <button class="btn" data-sheet="save">${L ? 'Save' : 'Create'}</button>
     ${L ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete ${word}</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
     save: async () => {
       const name = val('name');
       if (!name) return toast('Give it a name');
-      if (L) { store.update('lists', L.id, { name }); closeSheet(); return toast('Saved'); }
-      const id = await store.add('lists', { name, kind: 'project', parentId });
+      const extra = { budget: num('budget') || null, deadline: val('deadline') || null };
+      if (L) { store.update('lists', L.id, { name, ...extra }); closeSheet(); return toast('Saved'); }
+      const id = await store.add('lists', { name, kind: 'project', parentId, ...extra });
       closeSheet(); tab = 'shop'; localStorage.setItem('ourhome-tab', tab); setShopView(id);
     },
     delete: () => {
@@ -1201,10 +1402,12 @@ function groceryForm(i) {
     <h3>Edit item</h3>
     <div class="field"><label>Item</label><input name="name" value="${esc(i.name)}"></div>
     <div class="field"><label>How many / how much (optional)</label><input name="qty" value="${esc(i.qty || '')}" placeholder="e.g. 2, 1 kg, a big one"></div>
+    <div class="field"><label>Where from? (optional)</label><input name="store" list="store-list-2" value="${esc(i.store || '')}" placeholder="e.g. Shufersal, the market">
+      <datalist id="store-list-2">${knownStores().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
     <button class="btn" data-sheet="save">Save</button>
     <div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>
   `, {
-    save: () => { const name = val('name'); if (!name) return toast('Type the item'); store.update('items', i.id, { name, qty: val('qty') || null }); closeSheet(); },
+    save: () => { const name = val('name'); if (!name) return toast('Type the item'); store.update('items', i.id, { name, qty: val('qty') || null, store: val('store') || null }); closeSheet(); },
     delete: () => { store.remove('items', i.id); closeSheet(); },
   });
 }
@@ -1481,7 +1684,18 @@ app.addEventListener('click', e => {
       if (tab === 'travel' && id === 'travel' && travelView) return setTravelView(null);
       tab = id; localStorage.setItem('ourhome-tab', tab); render(); window.scrollTo(0, 0); break;
     case 'home-view': homeView = id; localStorage.setItem('ourhome-homeview', id); render(); break;
-    case 'open-trip': setTravelView(id); break;
+    case 'open-trip': tripSeg = 'money'; localStorage.setItem('ourhome-tripseg', tripSeg); setTravelView(id); break;
+    case 'trip-seg': tripSeg = id; localStorage.setItem('ourhome-tripseg', id); render(); break;
+    case 'add-plan': planForm(currentTrip(), null, id || ''); break;
+    case 'edit-plan': planForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
+    case 'add-place': placeForm(currentTrip()); break;
+    case 'edit-place': placeForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
+    case 'toggle-place': { const pl = S.tripitems.find(x => x.id === id); store.update('tripitems', id, { done: !pl.done }); break; }
+    case 'add-booking': bookingForm(currentTrip()); break;
+    case 'edit-booking': bookingForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
+    case 'add-regular': { const g = groceryCounts()[id]; if (g) { addGrocery(g.name, g.store); toast(`${g.name} added`); } break; }
+    case 'remove-regular': { const all = groceryCounts(); store.setSettings({ groceryCounts: { ...all, [id]: { ...all[id], hidden: true } } }); break; }
+    case 'edit-regulars': editRegulars = !editRegulars; render(); break;
     case 'trips-back': setTravelView(null); break;
     case 'new-sub': listForm(null, 'project', id); break;
     case 'big-add': bigAddChooser(currentList()); break;
@@ -1517,13 +1731,14 @@ app.addEventListener('click', e => {
 app.addEventListener('submit', e => {
   if (e.target.id !== 'quick-add') return;
   e.preventDefault();
-  const input = e.target.querySelector('input');
+  const input = e.target.querySelector('[name=q]');
   const name = input.value.trim();
-  const listId = e.target.dataset.list || currentList()?.id;
-  if (!name || !listId) return;
+  if (!name) return;
+  lastStore = (e.target.querySelector('[name=store]')?.value || '').trim();
+  localStorage.setItem('ourhome-laststore', lastStore);
   input.value = '';
-  store.add('items', { name, listId, arrived: false });
-  if (e.target.dataset.list) toast(`${name} added to groceries`);
+  addGrocery(name, lastStore);
+  if (!currentList()) toast(`${name} added to groceries`);
 });
 
 function askDevice() {

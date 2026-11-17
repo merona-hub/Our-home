@@ -348,3 +348,28 @@ nav.tabs > button span { white-space: nowrap; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--c-soft); border-radius: 14px; padding: 4px; margin-bottom: 14px; }
 .seg button { min-height: 42px; border-radius: 11px; font-weight: 700; color: var(--c); }
 .seg button.on { background: var(--card); box-shadow: 0 1px 3px #343A341f; color: var(--text); }
+
+/* ---------- Project tracker ---------- */
+.tracker .bar-label { font-size: 14px; color: var(--muted); margin: 12px 0 6px; }
+.tracker .bar { margin-top: 0; }
+.bar.budget span { background: var(--c2); }
+.late-txt { color: var(--danger); font-weight: 700; }
+
+/* ---------- Groceries: store + regulars ---------- */
+.quick-add-box { margin-bottom: 14px; }
+.quick-add-box .quick-add { margin-bottom: 8px; }
+.store-in { width: 100%; min-height: 44px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--card); padding: 0 16px; font-size: 16px; outline: none; color: var(--text); }
+.store-in:focus { border-color: var(--c2); }
+.regulars-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--muted); font-weight: 700; margin: 2px 4px 6px; }
+.regulars-head .link { font-size: 14px; padding: 0; }
+.regulars { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.reg { min-height: 40px; padding: 0 14px; border-radius: 999px; background: var(--c-soft); color: var(--c); font-weight: 700; font-size: 15px; }
+.reg.editing { background: #F3DEDB; color: var(--danger); }
+
+/* ---------- Trip sections ---------- */
+.trip-sub { color: var(--muted); font-size: 15px; margin: 0 2px 12px; }
+.seg4 { grid-template-columns: repeat(4, 1fr); }
+.seg4 button { font-size: 14px; }
+.row .time { width: 48px; flex: none; font-weight: 700; color: var(--c); font-size: 15px; }
+.tick { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 4px 0 6px; }
+.tick input { width: 22px; height: 22px; accent-color: var(--c); }
