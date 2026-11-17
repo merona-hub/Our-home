@@ -7,7 +7,7 @@ const DEFAULTS = {
   houseName: 'Our Home',
   color: '#455B48',
   names: { a: 'Merona', b: 'Daniel' },
-  pets: 'Eevee & Stella',
+  pets: [{ name: 'Eevee', type: 'cat' }, { name: 'Stella', type: 'cat' }],
 };
 
 const CATEGORIES = [
@@ -40,14 +40,38 @@ const SOURCES = [
   { id: 'gift', label: 'Gift', icon: '🎁' },
 ];
 
-const COLORS = ['#455B48', '#82947D', '#527A5B', '#343A34', '#B97970', '#C49A58'];
+// Minimal line icons (24×24, drawn with the current text color)
+const svg = (inner, size = 24) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const ICONS = {
+  money: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  bills: '<path d="M5 2.5v19l2.3-1.4 2.4 1.4 2.3-1.4 2.3 1.4 2.4-1.4 2.3 1.4v-19l-2.3 1.4-2.4-1.4L12 3.9 9.7 2.5 7.3 3.9Z"/><path d="M9 9h6M9 13h6"/>',
+  shop: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  contract: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 13h6M9 17h4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+};
+
+// Pet illustrations
+const EYES = (y, l = 9.5, r = 14.5) => `<circle cx="${l}" cy="${y}" r=".9" fill="currentColor" stroke="none"/><circle cx="${r}" cy="${y}" r=".9" fill="currentColor" stroke="none"/>`;
+const PETS = [
+  { id: 'cat', label: 'Cat', art: '<path d="M5.5 10.5V4.5l4 3.2q2.5-.9 5 0l4-3.2v6q1 1.6 1 3.5c0 3.6-3.6 5.5-7.5 5.5S4.5 17.6 4.5 14q0-1.9 1-3.5Z"/>' + EYES(13) + '<path d="M11.2 15.6h1.6L12 16.6Z"/>' },
+  { id: 'dog', label: 'Dog', art: '<path d="M8 6.5q4-1.8 8 0 2 2.8 2 6.5c0 4-2.7 6-6 6s-6-2-6-6q0-3.7 2-6.5Z"/><path d="M8 6.5Q4 6 3.6 10.5q.4 2.6 2.6 2.3"/><path d="M16 6.5q4-.5 4.4 4q-.4 2.6-2.6 2.3"/>' + EYES(11.5) + '<path d="M10.8 14.6h2.4L12 16Z"/>' },
+  { id: 'rabbit', label: 'Rabbit', art: '<path d="M9.6 9.2C8 5.5 8 2.6 9.6 2.6s2 3 2 6.4"/><path d="M14.4 9.2c1.6-3.7 1.6-6.6 0-6.6s-2 3-2 6.4"/><circle cx="12" cy="14.6" r="6"/>' + EYES(13.8) + '<path d="M11.3 16.4h1.4l-.7.8Z"/>' },
+  { id: 'bird', label: 'Bird', art: '<path d="M4.5 15.5c0-4.5 2.8-8 7-8.4 2.5-.2 4.2 1 4.8 2.6l3.2 1-3.1 1.1c.3 4.3-2.5 6.7-6.4 6.7-2.6 0-4.5-.9-5.5-3Z"/><path d="M7.6 13.4c1.6 1.8 3.8 1.9 5.4.1"/><circle cx="14" cy="10.4" r=".9" fill="currentColor" stroke="none"/>' },
+  { id: 'fish', label: 'Fish', art: '<path d="M2.8 12c3.2-4.6 8-6.2 12.4-3.6Q17.6 10 17.6 12t-2.4 3.6C10.8 18.2 6 16.6 2.8 12Z"/><path d="M17.6 12 21.4 8.2v7.6Z"/><circle cx="13.2" cy="11" r=".9" fill="currentColor" stroke="none"/>' },
+  { id: 'hamster', label: 'Hamster', art: '<circle cx="7.4" cy="7.6" r="2.1"/><circle cx="16.6" cy="7.6" r="2.1"/><path d="M5.4 10.4C6.6 8 9 7 12 7s5.4 1 6.6 3.4c1.4 3 .6 6.3-1.9 7.6-3 1.6-6.4 1.6-9.4 0-2.5-1.3-3.3-4.6-1.9-7.6Z"/>' + EYES(12.4) + '<path d="M11.4 14.6h1.2l-.6.7Z"/>' },
+  { id: 'other', label: 'Other', art: '<path d="M12 12.4c-2.6 0-5 2.6-5 4.8 0 1.6 1.3 2.4 2.6 2.1 1-.2 1.6-.5 2.4-.5s1.4.3 2.4.5c1.3.3 2.6-.5 2.6-2.1 0-2.2-2.4-4.8-5-4.8Z"/><ellipse cx="6.2" cy="10" rx="1.6" ry="2"/><ellipse cx="9.6" cy="6.4" rx="1.6" ry="2.1"/><ellipse cx="14.4" cy="6.4" rx="1.6" ry="2.1"/><ellipse cx="17.8" cy="10" rx="1.6" ry="2"/>' },
+];
+const petArt = (type, size = 24) => svg((PETS.find(p => p.id === type) || PETS[PETS.length - 1]).art, size);
 
 const TABS = [
-  { id: 'money', label: 'Money', icon: '💰' },
-  { id: 'bills', label: 'Bills', icon: '🧾' },
-  { id: 'shop', label: 'To buy', icon: '🛍️' },
-  { id: 'contract', label: 'Contract', icon: '📄' },
+  { id: 'money', label: 'Money' },
+  { id: 'bills', label: 'Bills' },
+  { id: 'shop', label: 'To buy' },
+  { id: 'contract', label: 'Contract' },
 ];
+// What the big + button adds, depending on the open tab
+const FAB_ACTION = { money: 'add-expense', bills: 'add-bill', shop: 'add-item', contract: 'add-expense' };
 
 // ================================================================
 //  State
@@ -77,7 +101,12 @@ const clean = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== 
 
 function cfg() {
   const s = (S && S.settings) || {};
-  return { ...DEFAULTS, ...s, names: { ...DEFAULTS.names, ...(s.names || {}) } };
+  return {
+    ...DEFAULTS, ...s,
+    color: DEFAULTS.color,                      // fixed palette
+    names: { ...DEFAULTS.names, ...(s.names || {}) },
+    pets: Array.isArray(s.pets) ? s.pets : DEFAULTS.pets,
+  };
 }
 const nm = p => cfg().names[p] || p;
 const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
@@ -92,8 +121,6 @@ function toast(msg) {
 
 function applyTheme() {
   const c = cfg().color;
-  document.documentElement.style.setProperty('--c', c);
-  document.documentElement.style.setProperty('--c-soft', c === DEFAULTS.color ? '#DCE3D5' : c + '26');
   document.querySelector('meta[name=theme-color]').setAttribute('content', c);
   document.title = cfg().houseName;
 }
@@ -165,14 +192,20 @@ function render() {
     <header>
       <div>
         <h1>${esc(c.houseName)}</h1>
-        <div class="who">${esc(c.names.a)} · ${esc(c.names.b)}${c.pets ? ' · ' + esc(c.pets) : ''}</div>
+        <div class="who"><span>${esc(c.names.a)}</span><span>${esc(c.names.b)}</span>${c.pets.map(p => `<span class="pet">${petArt(p.type, 16)}${esc(p.name)}</span>`).join('')}</div>
       </div>
       <button class="gear" data-act="settings" aria-label="Settings"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </header>
     <main>${banners.join('')}${body}</main>
     <nav class="tabs">
-      ${TABS.map(t => `<button data-act="tab" data-id="${t.id}" class="${t.id === tab ? 'on' : ''}"><span class="i">${t.icon}</span>${t.label}</button>`).join('')}
+      ${TABS.slice(0, 2).map(tabBtn).join('')}
+      <div class="fab-slot"><button class="fab" data-act="${FAB_ACTION[tab]}" aria-label="Add">${svg(ICONS.plus, 30)}</button></div>
+      ${TABS.slice(2).map(tabBtn).join('')}
     </nav>`;
+}
+
+function tabBtn(t) {
+  return `<button data-act="tab" data-id="${t.id}" class="${t.id === tab ? 'on' : ''}">${svg(ICONS[t.id])}<span>${t.label}</span></button>`;
 }
 
 // ---------------- Money ----------------
@@ -200,11 +233,10 @@ function renderMoney() {
     const total = items.filter(e => e.type !== 'transfer').reduce((s, e) => s + (+e.amount || 0), 0);
     return `<div class="month"><span>${fmtMonth(k)}</span><span>${money(total)}</span></div>
       <div class="list">${items.map(expenseRow).join('')}</div>`;
-  }).join('') : `<div class="empty">No expenses yet.<br>Tap “Add expense” to start.</div>`;
+  }).join('') : `<div class="empty">No expenses yet.<br>Tap the <b>+</b> button below to add one.</div>`;
 
   return `
     ${hero}
-    <button class="btn big" data-act="add-expense">＋ Add expense</button>
     <div class="card">
       <h2>Paid so far</h2>
       <div class="split2">
@@ -274,7 +306,7 @@ function renderBills() {
 
   return `${hero}
     <div class="list">${rows || '<div class="empty">No bills yet</div>'}</div>
-    <div class="btn-row"><button class="btn ghost" data-act="add-bill">＋ Add a bill</button></div>`;
+    <div class="empty" style="padding:14px">Tap <b>+</b> to add another bill</div>`;
 }
 
 // ---------------- Shopping ----------------
@@ -300,10 +332,9 @@ function renderShop() {
   };
 
   return `
-    <button class="btn big" data-act="add-item">＋ Add something we need</button>
     ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${approx ? '~' + money(approx) : ''}</span></div>
       <div class="list">${pending.map(row).join('')}</div>`
-      : `<div class="empty">Nothing on the list 🎉</div>`}
+      : `<div class="empty">Nothing on the list 🎉<br>Tap <b>+</b> to add something we need.</div>`}
     ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
       ${showArrived ? `<div class="list">${arrived.map(row).join('')}</div>` : ''}` : ''}`;
 }
@@ -355,6 +386,7 @@ function renderContract() {
 const sheet = document.getElementById('sheet');
 const backdrop = document.getElementById('sheet-backdrop');
 let sheetHandlers = {};
+let sheetHandlersFor = null;   // optional hook for chips with dynamic names
 
 function openSheet(html, handlers = {}) {
   sheetHandlers = handlers;
@@ -370,6 +402,7 @@ function closeSheet() {
   backdrop.classList.add('hidden');
   sheet.innerHTML = '';
   sheetHandlers = {};
+  sheetHandlersFor = null;
 }
 backdrop.addEventListener('click', closeSheet);
 
@@ -385,8 +418,10 @@ sheet.addEventListener('click', e => {
   if (chip) {
     chip.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     chip.classList.add('on');
-    const h = sheetHandlers['chip:' + chip.parentElement.dataset.field];
+    const field = chip.parentElement.dataset.field;
+    const h = sheetHandlers['chip:' + field];
     if (h) h(chip.dataset.v);
+    if (sheetHandlersFor) sheetHandlersFor(field, chip.dataset.v);
     return;
   }
   const btn = e.target.closest('[data-sheet]');
@@ -659,24 +694,34 @@ function downloadICS() {
 // ---------------- Settings ----------------
 function settingsForm() {
   const c = cfg();
-  openSheet(`
-    <h3>Settings</h3>
-    <div class="field"><label>Home name</label><input name="houseName" value="${esc(c.houseName)}"></div>
-    <div class="field"><span class="lbl">Main color</span>
-      <div class="swatches" data-field="color">${COLORS.map(col => `<button type="button" data-color="${col}" class="${col === c.color ? 'on' : ''}" style="background:${col}"></button>`).join('')}</div></div>
-    <div class="split2">
-      <div class="field"><label>Person 1</label><input name="nameA" value="${esc(c.names.a)}"></div>
-      <div class="field"><label>Person 2</label><input name="nameB" value="${esc(c.names.b)}"></div>
-    </div>
-    <div class="field"><label>Pets</label><input name="pets" value="${esc(c.pets)}"></div>
-    <button class="btn" data-sheet="save">Save</button>
-    <div class="btn-row"><button class="btn light" data-sheet="backup">⬇️ Download a backup</button></div>
-    ${store.mode === 'firebase' ? `<div class="btn-row"><button class="btn light" data-sheet="signout">Sign out (${esc(store.user?.email || '')})</button></div>` : ''}
-    <div class="btn-row"><button class="btn light" data-sheet="close">Close</button></div>
-  `, {
+  let pets = c.pets.map(p => ({ ...p }));
+
+  const petRows = () => pets.map((p, i) => `
+    <div class="pet-edit" data-i="${i}">
+      <div class="pet-top">
+        <span class="pet-art">${petArt(p.type, 30)}</span>
+        <input name="pet-${i}" value="${esc(p.name)}" placeholder="Pet's name">
+        <button type="button" class="icon-btn" data-sheet="remove-pet" data-i="${i}" aria-label="Remove">${svg(ICONS.close, 20)}</button>
+      </div>
+      ${chips('pettype-' + i, PETS.map(t => ({ v: t.id, label: t.label })), p.type)}
+    </div>`).join('');
+
+  const readPets = () => pets.forEach((p, i) => {
+    p.name = val('pet-' + i) || '';
+    p.type = chipVal('pettype-' + i) || p.type;
+  });
+  const redrawPets = () => { sheet.querySelector('#pets').innerHTML = petRows(); };
+
+  const handlers = {
+    'add-pet': () => { readPets(); pets.push({ name: '', type: 'cat' }); redrawPets(); sheet.querySelector(`[name="pet-${pets.length - 1}"]`).focus(); },
+    'remove-pet': btn => { readPets(); pets.splice(+btn.dataset.i, 1); redrawPets(); },
     save: () => {
-      const color = sheet.querySelector('.swatches .on')?.dataset.color || c.color;
-      store.setSettings({ houseName: val('houseName') || DEFAULTS.houseName, color, names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' }, pets: val('pets') });
+      readPets();
+      store.setSettings({
+        houseName: val('houseName') || DEFAULTS.houseName,
+        names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
+        pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
+      });
       closeSheet(); toast('Saved');
     },
     backup: () => {
@@ -687,13 +732,30 @@ function settingsForm() {
       a.click();
     },
     signout: () => { if (confirm('Sign out?')) { closeSheet(); store.signOut(); } },
-  });
-  sheet.querySelector('.swatches').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    sheet.querySelectorAll('.swatches button').forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    document.documentElement.style.setProperty('--c', b.dataset.color);
-  });
+  };
+  // the pet-type chips redraw the little picture
+  sheetHandlersFor = (field, v) => {
+    if (!field.startsWith('pettype-')) return;
+    const i = +field.split('-')[1];
+    sheet.querySelector(`.pet-edit[data-i="${i}"] .pet-art`).innerHTML = petArt(v, 30);
+  };
+
+  openSheet(`
+    <h3>Settings</h3>
+    <div class="field"><label>Home name</label><input name="houseName" value="${esc(c.houseName)}"></div>
+    <div class="split2">
+      <div class="field"><label>Person 1</label><input name="nameA" value="${esc(c.names.a)}"></div>
+      <div class="field"><label>Person 2</label><input name="nameB" value="${esc(c.names.b)}"></div>
+    </div>
+    <div class="field"><span class="lbl">Pets</span>
+      <div id="pets">${petRows()}</div>
+      <button type="button" class="btn ghost" data-sheet="add-pet" style="margin-top:8px">${svg(ICONS.plus, 20)} Add a pet</button>
+    </div>
+    <button class="btn" data-sheet="save">Save</button>
+    <div class="btn-row"><button class="btn light" data-sheet="backup">Download a backup</button></div>
+    ${store.mode === 'firebase' ? `<div class="btn-row"><button class="btn light" data-sheet="signout">Sign out (${esc(store.user?.email || '')})</button></div>` : ''}
+    <div class="btn-row"><button class="btn light" data-sheet="close">Close</button></div>
+  `, handlers);
 }
 
 // ================================================================
@@ -792,6 +854,10 @@ store.init(user => {
 }).catch(err => {
   app.innerHTML = `<div class="login"><h1>Can't connect</h1><p>${esc(err.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`;
 });
+
+// Feel like an app: no pinch-zoom or double-tap zoom
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
