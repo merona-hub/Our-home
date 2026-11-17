@@ -89,6 +89,68 @@ const CURRENCIES = [
   { v: 'JPY', sym: '¥', label: '¥ Japanese yen' },
 ];
 const cur = () => (CURRENCIES.find(c => c.v === ((S && S.settings && S.settings.currency) || 'ILS')) || CURRENCIES[0]).sym.trim();
+const mainCur = () => (S && S.settings && S.settings.currency) || 'ILS';
+const symOf = code => (CURRENCIES.find(c => c.v === code) || { sym: code + ' ' }).sym;
+const fmtIn = (n, code) => symOf(code) + (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const round2 = n => Math.round(n * 100) / 100;
+
+// Exchange rates (European Central Bank, via the free Frankfurter service). Cached per day on the phone.
+async function getRate(from, to, date) {
+  if (from === to) return 1;
+  const day = !date || date >= today() ? 'latest' : date;
+  const key = `ourhome-rate-${from}-${to}-${day === 'latest' ? today() : day}`;
+  const cached = localStorage.getItem(key);
+  if (cached) return +cached;
+  const tries = [
+    [`https://api.frankfurter.dev/v1/${day}?base=${from}&symbols=${to}`, j => j.rates && j.rates[to]],
+    [`https://api.frankfurter.app/${day}?from=${from}&to=${to}`, j => j.rates && j.rates[to]],
+    [`https://open.er-api.com/v6/latest/${from}`, j => j.rates && j.rates[to]],
+  ];
+  for (const [url, pick] of tries) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const v = pick(await r.json());
+      if (v) { localStorage.setItem(key, v); return +v; }
+    } catch (e) { /* try the next one */ }
+  }
+  throw new Error("Couldn't get the exchange rate. Check your internet connection.");
+}
+
+// An amount box with a currency picker next to it
+const amountField = (name, label, value, code, { big = true, autofocus = false } = {}) => `
+  <div class="field"><label>${label}</label>
+    <div class="amt-row">
+      <input ${big ? 'class="amount"' : ''} name="${name}" inputmode="decimal" placeholder="0" value="${esc(value ?? '')}" ${autofocus ? 'autofocus' : ''}>
+      <div class="select-wrap cur-pick"><select name="${name}-cur" aria-label="Currency">
+        ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (code || mainCur()) ? 'selected' : ''}>${c.v}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="hint conv" data-for="${name}"></div>
+  </div>`;
+
+// Read an amount field, converted to the main currency
+async function readAmount(name, date) {
+  const n = num(name);
+  const code = sheet.querySelector(`[name="${name}-cur"]`)?.value || mainCur();
+  if (code === mainCur() || !n) return { amount: n, origAmount: null, origCurrency: null, rate: null };
+  const rate = await getRate(code, mainCur(), date);
+  return { amount: round2(n * rate), origAmount: n, origCurrency: code, rate };
+}
+
+// Live "≈ ₪370" preview under amount fields in another currency
+async function updateConv(name) {
+  const hint = sheet.querySelector(`.conv[data-for="${name}"]`);
+  if (!hint) return;
+  const n = num(name);
+  const code = sheet.querySelector(`[name="${name}-cur"]`)?.value;
+  if (!code || code === mainCur() || !n) { hint.textContent = ''; return; }
+  hint.textContent = 'Converting…';
+  try {
+    const rate = await getRate(code, mainCur(), sheet.querySelector('[name=date]')?.value);
+    if (num(name) === n) hint.textContent = `≈ ${money(n * rate)}  ·  1 ${code} = ${rate.toFixed(rate < 0.1 ? 5 : 3)} ${mainCur()}`;
+  } catch (err) { hint.textContent = err.message; }
+}
 
 const TABS = [
   { id: 'money', label: 'Money' },
@@ -304,7 +366,7 @@ function expenseRow(e) {
   return `<button class="row" data-act="edit-expense" data-id="${e.id}">
     <span class="ico">${c.icon}</span>
     <span class="main"><div class="title">${esc(e.note || c.label)}</div>
-      <div class="meta">${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}</div></span>
+      <div class="meta">${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
     <span class="amt">${money(e.amount)}</span></button>`;
 }
 
@@ -422,7 +484,7 @@ function listHead(L) {
 function itemRow(i) {
   const src = SOURCES.find(s => s.id === i.source) || SOURCES[0];
   const bits = [src.label, ownerLabel(i.owner)];
-  if (i.approx) bits.push('~' + money(i.approx));
+  if (i.approx) bits.push('~' + money(i.approx) + (i.approxCur ? ` (${fmtIn(i.approxOrig, i.approxCur)})` : ''));
   if (i.arrived) bits.push('arrived ' + fmtDate(i.arrivedAt));
   else if (i.eta) bits.push('arrives ' + fmtDate(i.eta));
   return `<div class="row ${i.arrived ? 'done' : ''}" style="padding:10px 16px">
@@ -655,6 +717,15 @@ sheet.addEventListener('click', e => {
   }
 });
 sheet.addEventListener('submit', e => e.preventDefault());
+sheet.addEventListener('input', e => {
+  const n = e.target.name;
+  if (n && sheet.querySelector(`.conv[data-for="${n}"]`)) updateConv(n);
+});
+sheet.addEventListener('change', e => {
+  const n = e.target.name || '';
+  if (n.endsWith('-cur')) updateConv(n.slice(0, -4));
+  if (n === 'date') sheet.querySelectorAll('.conv').forEach(h => updateConv(h.dataset.for));
+});
 sheet.addEventListener('change', e => {
   const sel = e.target.closest('select[name^="pettype-"]');
   if (sel) sheet.querySelector(`.pet-edit[data-i="${sel.dataset.i}"] .pet-art`).innerHTML = petArt(sel.value, 30);
@@ -709,8 +780,7 @@ function expenseForm(e = null) {
   const sc = splitChoice(x.splitA ?? 50);
   openSheet(`
     <h3>${e ? 'Edit expense' : 'Add expense'}</h3>
-    <div class="field"><label>How much? (${cur()})</label>
-      <input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${esc(x.amount)}" ${e ? '' : 'autofocus'}></div>
+    ${amountField('amount', 'How much?', x.origCurrency ? x.origAmount : x.amount, x.origCurrency || mainCur(), { autofocus: !e })}
     <div class="field"><span class="lbl">What for?</span>
       ${chips('category', CATEGORIES.map(c => ({ v: c.id, label: c.icon + ' ' + c.label })), x.category)}
       <input name="note" placeholder="Details (optional)" value="${esc(x.note)}" style="margin-top:10px"></div>
@@ -726,15 +796,16 @@ function expenseForm(e = null) {
     ${e ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
     'chip:split': v => sheet.querySelector('#custom-split').classList.toggle('hidden', v !== 'custom'),
-    save: () => {
-      const amount = num('amount');
-      if (amount <= 0) return toast('Please enter an amount');
+    save: async () => {
+      if (num('amount') <= 0) return toast('Please enter an amount');
+      let conv;
+      try { conv = await readAmount('amount', val('date')); } catch (err) { return toast(err.message); }
       const split = chipVal('split');
       let splitA = split === 'a' ? 100 : split === 'b' ? 0 : 50;
       if (split === 'custom') splitA = Math.min(100, Math.max(0, num('splitA')));
       const paidBy = chipVal('paidBy');
       localStorage.setItem('ourhome-me', paidBy);
-      const data = { amount, category: chipVal('category'), note: val('note'), paidBy, date: val('date') || today(), splitA };
+      const data = { ...conv, category: chipVal('category'), note: val('note'), paidBy, date: val('date') || today(), splitA };
       if (e) store.update('expenses', e.id, data); else store.add('expenses', data);
       closeSheet();
       toast(e ? 'Saved' : 'Expense added');
@@ -824,19 +895,20 @@ function payBillForm(b) {
   openSheet(`
     <h3>${b.icon || '🧾'} ${esc(b.name)}</h3>
     ${s.state === 'paid' ? `<div class="banner">Already marked paid this month (${fmtDate(b.lastPaid)}). Paying again adds another expense.</div>` : ''}
-    <div class="field"><label>Amount paid (${cur()})</label>
-      <input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${b.amount || ''}" autofocus></div>
+    ${amountField('amount', 'Amount paid', b.amount || '', mainCur(), { autofocus: true })}
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), defaultPayer)}</div>
     <div class="field"><label>When?</label><input type="date" name="date" value="${today()}"></div>
     <button class="btn" data-sheet="save">✓ Paid — add to expenses</button>
     <div class="btn-row"><button class="btn light" data-sheet="close">Cancel</button></div>
   `, {
-    save: () => {
-      const amount = num('amount');
-      if (amount <= 0) return toast('Please enter an amount');
+    save: async () => {
+      if (num('amount') <= 0) return toast('Please enter an amount');
       const date = val('date') || today();
+      let conv;
+      try { conv = await readAmount('amount', date); } catch (err) { return toast(err.message); }
+      const amount = conv.amount;
       const splitA = b.owner === 'a' ? 100 : b.owner === 'b' ? 0 : 50;
-      store.add('expenses', clean({ amount, category: 'bills', note: b.name, paidBy: chipVal('paidBy'), date, splitA, billId: b.id, prevLastPaid: b.lastPaid || null }));
+      store.add('expenses', clean({ ...conv, category: 'bills', note: b.name, paidBy: chipVal('paidBy'), date, splitA, billId: b.id, prevLastPaid: b.lastPaid || null }));
       store.update('bills', b.id, { lastPaid: !b.lastPaid || date > b.lastPaid ? date : b.lastPaid, amount: b.amount || amount });
       closeSheet(); toast(b.name + ' paid ✓');
     },
@@ -918,16 +990,18 @@ function itemForm(i = null, listId = null) {
     <div class="field"><span class="lbl">Where from?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
     <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], x.owner)}</div>
     <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
-    <div class="field"><label>About how much? (${cur()})</label><input name="approx" inputmode="decimal" value="${esc(x.approx || '')}" placeholder="0"></div>
+    ${amountField('approx', 'About how much?', (x.approxCur ? x.approxOrig : x.approx) || '', x.approxCur || mainCur(), { big: false })}
     <div class="field"><label>When does it arrive? (optional)</label><input type="date" name="eta" value="${esc(x.eta || '')}"></div>
     <button class="btn" data-sheet="save">${i ? 'Save' : 'Add to list'}</button>
     ${i ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
-    save: () => {
+    save: async () => {
       const name = val('name');
       if (!name) return toast('What do we need?');
       const chosen = chipVal('listId') || lid;
-      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: num('approx'), eta: val('eta') || null, listId: chosen === 'home' ? null : chosen };
+      let conv;
+      try { conv = await readAmount('approx'); } catch (err) { return toast(err.message); }
+      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: conv.amount, approxOrig: conv.origAmount, approxCur: conv.origCurrency, eta: val('eta') || null, listId: chosen === 'home' ? null : chosen };
       if (i) store.update('items', i.id, data); else store.add('items', { ...data, arrived: false });
       closeSheet(); toast(i ? 'Saved' : 'Added to the list');
     },
@@ -953,17 +1027,18 @@ function doneShopping(L) {
   openSheet(`
     <h3>Done shopping 🛒</h3>
     <p style="margin-top:0;color:var(--muted)">${got.length} item${got.length > 1 ? 's' : ''} in the cart. Add the receipt total to expenses?</p>
-    <div class="field"><label>Receipt total (${cur()})</label><input class="amount" name="amount" inputmode="decimal" placeholder="0" autofocus></div>
+    ${amountField('amount', 'Receipt total', '', mainCur(), { autofocus: true })}
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), defPayer())}</div>
     <div class="field"><span class="lbl">Split</span>${chips('split', [{ v: '50', label: 'Half-half' }, { v: 'a', label: `Only ${esc(nm('a'))}'s` }, { v: 'b', label: `Only ${esc(nm('b'))}'s` }], '50')}</div>
     <button class="btn" data-sheet="save">Add to expenses & clear the cart</button>
     <div class="btn-row"><button class="btn light" data-sheet="clear">Just clear the cart</button></div>
   `, {
-    save: () => {
-      const amount = num('amount');
-      if (amount <= 0) return toast('Enter the total, or tap “Just clear the cart”');
+    save: async () => {
+      if (num('amount') <= 0) return toast('Enter the total, or tap “Just clear the cart”');
+      let conv;
+      try { conv = await readAmount('amount'); } catch (err) { return toast(err.message); }
       const split = chipVal('split');
-      store.add('expenses', { amount, category: 'groceries', note: L.name, paidBy: chipVal('paidBy'), date: today(), splitA: split === 'a' ? 100 : split === 'b' ? 0 : 50 });
+      store.add('expenses', { ...conv, category: 'groceries', note: L.name, paidBy: chipVal('paidBy'), date: today(), splitA: split === 'a' ? 100 : split === 'b' ? 0 : 50 });
       got.forEach(i => store.remove('items', i.id));
       closeSheet(); toast('Added to expenses ✓');
     },
@@ -991,19 +1066,19 @@ function toggleItem(i) {
   const payer = i.owner === 'a' || i.owner === 'b' ? i.owner : (defPayer());
   openSheet(`
     <h3>🎉 ${esc(i.name)} arrived!</h3>
-    <div class="field"><label>What did it cost? (${cur()})</label>
-      <input class="amount" name="amount" inputmode="decimal" value="${i.approx || ''}" placeholder="0" autofocus></div>
+    ${amountField('amount', 'What did it cost?', (i.approxCur ? i.approxOrig : i.approx) || '', i.approxCur || mainCur(), { autofocus: true })}
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), payer)}</div>
     <div class="field"><span class="lbl">Split</span>${chips('split', [{ v: '50', label: 'Half-half' }, { v: 'a', label: `Only ${esc(nm('a'))}'s` }, { v: 'b', label: `Only ${esc(nm('b'))}'s` }], '50')}</div>
     <button class="btn" data-sheet="save">✓ Add to expenses</button>
     <div class="btn-row"><button class="btn light" data-sheet="noexp">Arrived, no expense</button></div>
   `, {
     save: async () => {
-      const amount = num('amount');
-      if (amount <= 0) return toast('Enter the price, or tap “Arrived, no expense”');
+      if (num('amount') <= 0) return toast('Enter the price, or tap “Arrived, no expense”');
+      let conv;
+      try { conv = await readAmount('amount'); } catch (err) { return toast(err.message); }
       const split = chipVal('split');
       const note = L && L.kind === 'project' ? `${i.name} · ${L.name}` : i.name;
-      const expenseId = await store.add('expenses', { amount, category: 'home', note, paidBy: chipVal('paidBy'), date: today(), splitA: split === 'a' ? 100 : split === 'b' ? 0 : 50 });
+      const expenseId = await store.add('expenses', { ...conv, category: 'home', note, paidBy: chipVal('paidBy'), date: today(), splitA: split === 'a' ? 100 : split === 'b' ? 0 : 50 });
       store.update('items', i.id, { arrived: true, arrivedAt: today(), expenseId });
       closeSheet(); toast('Arrived & added to expenses ✓');
     },
@@ -1057,6 +1132,25 @@ function downloadICS() {
 }
 
 // ---------------- Settings ----------------
+// When the main currency changes, convert stored amounts at today's rate
+async function convertEverything(from, to) {
+  const r = await getRate(from, to);
+  const conv = (n) => round2((+n || 0) * r);
+  for (const e of S.expenses) {
+    const patch = { amount: conv(e.amount) };
+    if (e.origCurrency === to) Object.assign(patch, { amount: e.origAmount, origAmount: null, origCurrency: null, rate: null });
+    else if (e.origCurrency) patch.rate = (e.rate || 0) * r;
+    store.update('expenses', e.id, patch);
+  }
+  for (const i of S.items) if (i.approx) {
+    store.update('items', i.id, i.approxCur === to ? { approx: i.approxOrig, approxOrig: null, approxCur: null } : { approx: conv(i.approx) });
+  }
+  for (const b of S.bills) if (b.amount) store.update('bills', b.id, { amount: conv(b.amount) });
+  const c = S.settings.contract;
+  if (c && (c.rent || c.deposit)) store.setSettings({ contract: { ...c, rent: conv(c.rent), deposit: conv(c.deposit) } });
+  toast(`Converted to ${to} ✓`);
+}
+
 function settingsForm() {
   const c = cfg();
   const c0 = S.settings || {};
@@ -1083,13 +1177,21 @@ function settingsForm() {
   const handlers = {
     'add-pet': () => { readPets(); pets.push({ name: '', type: 'cat' }); redrawPets(); sheet.querySelector(`[name="pet-${pets.length - 1}"]`).focus(); },
     'remove-pet': btn => { readPets(); pets.splice(+btn.dataset.i, 1); redrawPets(); },
-    save: () => {
+    save: async () => {
       readPets();
+      const oldCur = mainCur(), newCur = sheet.querySelector('[name=currency]').value;
+      if (newCur !== oldCur) {
+        const hasData = S.expenses.length || S.items.some(i => i.approx) || S.bills.some(b => b.amount);
+        if (hasData && confirm(`Convert all existing amounts from ${oldCur} to ${newCur} at today's rate?\n\n(Cancel keeps the numbers as they are and only changes the currency sign.)`)) {
+          try { await convertEverything(oldCur, newCur); }
+          catch (err) { return toast(err.message); }
+        }
+      }
       store.setSettings({
         houseName: val('houseName') || DEFAULTS.houseName,
         names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
         pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
-        currency: sheet.querySelector('[name=currency]').value,
+        currency: newCur,
       });
       const d = chipVal('device'); if (d) localStorage.setItem('ourhome-device', d);
       closeSheet(); toast('Saved');
@@ -1113,7 +1215,7 @@ function settingsForm() {
     </div>
     <div class="field"><span class="lbl">This phone belongs to</span>${chips('device', people(), device() || '')}
       <div class="hint">Used to color the balance: green when you're owed, red when you owe.</div></div>
-    <div class="field"><label>Currency</label><div class="select-wrap"><select name="currency" class="plain-select">
+    <div class="field"><label>Main currency</label><div class="select-wrap"><select name="currency" class="plain-select">
       ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (c0.currency || 'ILS') ? 'selected' : ''}>${c.label}</option>`).join('')}
     </select></div></div>
     <div class="field"><span class="lbl">Pets</span>
