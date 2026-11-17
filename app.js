@@ -64,6 +64,7 @@ const ICONS = {
   cart: '<circle cx="8" cy="20.5" r="1.2"/><circle cx="18" cy="20.5" r="1.2"/><path d="M2 2.5h2.2l2.5 12a2 2 0 0 0 2 1.6h9.2a2 2 0 0 0 2-1.6l1.5-7.2H5.3"/>',
   back: '<path d="m15 18-6-6 6-6"/>',
   chevron: '<path d="m9 18 6-6-6-6"/>',
+  travel: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
 };
 
@@ -163,12 +164,10 @@ async function updateConv(name) {
 
 const TABS = [
   { id: 'money', label: 'Money' },
-  { id: 'bills', label: 'Bills' },
+  { id: 'home', label: 'Home' },
   { id: 'shop', label: 'To buy' },
-  { id: 'contract', label: 'Contract' },
+  { id: 'travel', label: 'Travel' },
 ];
-// What the big + button adds, depending on the open tab
-const FAB_ACTION = { money: 'add-expense', bills: 'add-bill', shop: 'add-item', contract: 'add-expense' };
 
 // ================================================================
 //  State
@@ -176,8 +175,10 @@ const FAB_ACTION = { money: 'add-expense', bills: 'add-bill', shop: 'add-item', 
 const store = createStore();
 let S = null;                       // latest data snapshot
 let tab = localStorage.getItem('ourhome-tab') || 'money';
+let homeView = localStorage.getItem('ourhome-homeview') || 'bills';          // 'bills' or 'contract'
+if (tab === 'bills' || tab === 'contract') { homeView = tab; tab = 'home'; }   // old tab names
+let travelView = localStorage.getItem('ourhome-travelview') || null;         // null = all trips, or a trip id
 let showArrived = false;
-let moneyFilter = localStorage.getItem('ourhome-moneyfilter') || 'all';   // 'all' or a trip id
 let shopView = localStorage.getItem('ourhome-shopview') || null;   // null = overview, 'home', or a list id
 const app = document.getElementById('app');
 
@@ -210,7 +211,7 @@ function cfg() {
 const nm = p => cfg().names[p] || p;
 const device = () => localStorage.getItem('ourhome-device');            // which person uses this phone
 const defPayer = () => device() || defPayer();
-const ownerLabel = o => o === 'both' ? 'Both' : o === 'none' ? 'Undecided' : nm(o);
+const ownerLabel = o => o === 'both' ? 'Both' : (!o || o === 'none') ? 'Undecided' : nm(o);
 const cat = id => CATEGORIES.find(c => c.id === id) || TRIP_CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
 
 function toast(msg, undo = null) {
@@ -282,13 +283,13 @@ function render() {
   if (!S) return;
   applyTheme();
   const c = cfg();
-  const body = { money: renderMoney, bills: renderBills, shop: renderShop, contract: renderContract }[tab]();
+  const body = ({ money: renderMoney, home: renderHome, shop: renderShop, travel: renderTravel }[tab] || renderMoney)();
   const ci = contractInfo();
   const banners = [];
   if (store.mode === 'local') {
     banners.push(`<div class="banner"><b>Demo mode:</b> data is saved only on this phone. Once shared sync is set up, you and ${esc(c.names.b)} will see the same data.</div>`);
   }
-  if (ci && ci.remindNow && tab !== 'contract') {
+  if (ci && ci.remindNow && !(tab === 'home' && homeView === 'contract')) {
     banners.push(`<div class="banner alert">📄 <b>Contract reminder:</b> tell the landlord by <b>${fmtDateLong(ci.deadline)}</b> if you're renewing or leaving (${ci.daysToDeadline} days left).</div>`);
   }
   const qa = document.activeElement && document.activeElement.closest && document.activeElement.closest('#quick-add') ? document.activeElement.value : null;
@@ -310,10 +311,22 @@ function render() {
 }
 
 function fabAction() {
-  if (tab !== 'shop') return FAB_ACTION[tab];
+  if (tab === 'home') return homeView === 'bills' ? 'add-bill' : 'add-expense';
+  if (tab === 'travel') return currentTrip() ? 'add-expense' : 'new-trip';
+  if (tab !== 'shop') return 'add-expense';
   const L = currentList();
   if (!L) return 'shop-add';
-  return L.kind === 'grocery' ? 'quick-focus' : 'add-item';
+  if (L.kind === 'grocery') return 'quick-focus';
+  return L.kind === 'project' && !L.parentId ? 'big-add' : 'add-item';
+}
+
+// ---------------- Home tab: bills + contract ----------------
+function renderHome() {
+  return `<div class="seg">
+      <button class="${homeView === 'bills' ? 'on' : ''}" data-act="home-view" data-id="bills">Bills</button>
+      <button class="${homeView === 'contract' ? 'on' : ''}" data-act="home-view" data-id="contract">Contract</button>
+    </div>
+    ${homeView === 'contract' ? renderContract() : renderBills()}`;
 }
 
 function tabBtn(t) {
@@ -338,35 +351,58 @@ function renderMoney() {
     </div>`;
   }
 
-  const trips = sortedTrips();
-  const trip = moneyFilter !== 'all' ? trips.find(t => t.id === moneyFilter) : null;
-  if (!trip) moneyFilter = 'all';
-  const filterRow = `<div class="filter-row">
-      <button class="${!trip ? 'on' : ''}" data-act="money-filter" data-id="all">All</button>
-      ${trips.map(t => `<button class="${trip && trip.id === t.id ? 'on' : ''}" data-act="money-filter" data-id="${t.id}">✈️ ${esc(t.name)}</button>`).join('')}
-      <button class="add" data-act="new-trip">+ Trip</button>
-    </div>`;
+  return `
+    ${hero}
+    ${expenseList(S.expenses, 'No expenses yet.')}`;
+}
 
-  const source = trip ? S.expenses.filter(e => e.tripId === trip.id && e.type !== 'transfer') : S.expenses;
+function expenseList(source, emptyMsg) {
   const sorted = [...source].sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.createdAt || 0) - (x.createdAt || 0));
   const groups = {};
   for (const e of sorted) (groups[monthKey(e.date)] ||= []).push(e);
-
-  const list = Object.keys(groups).length ? Object.entries(groups).map(([k, items]) => {
+  return Object.keys(groups).length ? Object.entries(groups).map(([k, items]) => {
     const total = items.filter(e => e.type !== 'transfer').reduce((s, e) => s + (+e.amount || 0), 0);
     return `<div class="month"><span>${fmtMonth(k)}</span><span>${money(total)}</span></div>
       <div class="list">${items.map(e => swipeable('expenses', e.id, expenseRow(e))).join('')}</div>`;
-  }).join('') : `<div class="empty">${trip ? 'No expenses for this trip yet.' : 'No expenses yet.'}<br>Tap the <b>+</b> button below to add one.</div>`;
-
-  return `
-    ${filterRow}
-    ${trip ? tripSummary(trip) : hero}
-    ${list}`;
+  }).join('') : `<div class="empty">${emptyMsg}<br>Tap the <b>+</b> button below to add one.</div>`;
 }
 
 // ---------------- Trips ----------------
 const sortedTrips = () => [...(S.trips || [])].sort((x, y) => (y.start || '').localeCompare(x.start || '') || (y.createdAt || 0) - (x.createdAt || 0));
 const tripOn = date => sortedTrips().find(t => t.start && t.end && date >= t.start && date <= t.end);
+const currentTrip = () => travelView && (S.trips || []).find(t => t.id === travelView);
+function setTravelView(v) {
+  travelView = v;
+  if (v) localStorage.setItem('ourhome-travelview', v); else localStorage.removeItem('ourhome-travelview');
+  render(); window.scrollTo(0, 0);
+}
+const tripSpent = t => S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer').reduce((s, e) => s + (+e.amount || 0), 0);
+
+function renderTravel() {
+  const t = currentTrip();
+  if (t) {
+    return `<div class="list-head"><button class="back" data-act="trips-back">${svg(ICONS.back, 22)}<span>Trips</span></button></div>
+      ${tripSummary(t)}
+      ${expenseList(S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer'), 'No expenses for this trip yet.')}`;
+  }
+  travelView = null;
+  const trips = sortedTrips();
+  const now = today();
+  const status = t => !t.start ? '' : now < t.start ? `in ${daysBetween(now, t.start)} days` : (!t.end || now <= t.end) ? 'happening now' : 'past';
+  return `
+    <div class="month"><span>Trips</span><button class="link" data-act="new-trip">+ New trip</button></div>
+    ${trips.length ? `<div class="list">${trips.map(t => {
+      const spent = tripSpent(t), budget = +t.budget || 0;
+      const meta = [fmtRange(t.start, t.end), status(t), budget ? `${money(spent)} of ${money(budget)}` : (spent ? money(spent) + ' spent' : '')].filter(Boolean).join(' · ');
+      return `<button class="list-card" data-act="open-trip" data-id="${t.id}">
+        <span class="ico">${svg(ICONS.travel)}</span>
+        <span class="main"><div class="title">${esc(t.name)}</div><div class="meta">${esc(meta)}</div>
+          ${budget ? `<div class="bar ${spent > budget ? 'over' : ''}"><span style="width:${Math.min(100, Math.round(spent / budget * 100))}%"></span></div>` : ''}</span>
+        <span class="chev">${svg(ICONS.chevron, 20)}</span></button>`;
+    }).join('')}</div>`
+    : `<button class="empty-card" data-act="new-trip">Plan a trip with its dates, local currency and a budget. Expenses you add during the trip go into it automatically, and still count in the shared balance.<br><b>Tap to plan one</b></button>`}`;
+}
+
 const fmtRange = (a, b) => a && b ? `${fmtDate(a)} – ${fmtDate(b)}` : a ? 'from ' + fmtDate(a) : '';
 
 function tripSummary(t) {
@@ -413,15 +449,15 @@ function tripForm(t = null) {
       if (start && end && end < start) return toast('The end date is before the start date');
       const data = { name, start, end, currency: sheet.querySelector('[name=tripcur]').value, budget: num('budget') };
       if (t) store.update('trips', t.id, data);
-      else { const id = await store.add('trips', data); moneyFilter = id; localStorage.setItem('ourhome-moneyfilter', id); }
-      closeSheet(); render(); toast(t ? 'Saved' : 'Trip created ✈️');
+      closeSheet();
+      if (!t) { const id = await store.add('trips', data); tab = 'travel'; localStorage.setItem('ourhome-tab', tab); setTravelView(id); }
+      toast(t ? 'Saved' : 'Trip created ✈️');
     },
     delete: () => {
       if (!confirm(`Delete “${t.name}”? Its expenses stay in the list.`)) return;
       S.expenses.filter(e => e.tripId === t.id).forEach(e => store.update('expenses', e.id, { tripId: null }));
       store.remove('trips', t.id);
-      moneyFilter = 'all'; localStorage.setItem('ourhome-moneyfilter', 'all');
-      closeSheet();
+      closeSheet(); setTravelView(null);
     },
   });
 }
@@ -449,7 +485,7 @@ function expenseRow(e) {
   return `<button class="row" data-act="edit-expense" data-id="${e.id}">
     <span class="ico">${c.icon}</span>
     <span class="main"><div class="title">${esc(e.note || c.label)}</div>
-      <div class="meta">${e.tripId && moneyFilter === 'all' && S.trips?.find(t => t.id === e.tripId) ? '✈️ ' + esc(S.trips.find(t => t.id === e.tripId).name) + ' · ' : ''}${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
+      <div class="meta">${e.tripId && tab !== 'travel' && S.trips?.find(t => t.id === e.tripId) ? '✈️ ' + esc(S.trips.find(t => t.id === e.tripId).name) + ' · ' : ''}${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
     <span class="amt">${money(e.amount)}</span></button>`;
 }
 
@@ -521,10 +557,44 @@ function listStats(id) {
 }
 const sortedLists = kind => S.lists.filter(l => l.kind === kind).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
 
+const bigProjects = () => S.lists.filter(l => l.kind === 'project' && !l.parentId).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
+const subProjects = id => S.lists.filter(l => l.kind === 'project' && l.parentId === id).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
+const treeIds = big => [big.id, ...subProjects(big.id).map(s => s.id)];
+const bigOf = L => L && L.parentId ? S.lists.find(l => l.id === L.parentId) : L;
+
 function renderShop() {
   const L = currentList();
   if (!L) { shopView = null; return renderShopOverview(); }
-  return L.kind === 'grocery' ? renderGrocery(L) : renderItemList(L);
+  if (L.kind === 'grocery') return renderGrocery(L);
+  if (L.kind === 'project' && !L.parentId) return renderBigProject(L);
+  return renderItemList(L);
+}
+
+function trackerCard(st) {
+  return `<div class="card">
+    <div class="split2">
+      <div class="stat"><div class="n">${st.done} / ${st.total}</div><div class="t">done</div></div>
+      <div class="stat"><div class="n">${money(st.spent)}</div><div class="t">spent${st.approx ? ` · ~${money(st.approx)} to go` : ''}</div></div>
+    </div>
+    <div class="bar" style="margin-top:12px"><span style="width:${st.total ? Math.round(st.done / st.total * 100) : 0}%"></span></div>
+  </div>`;
+}
+
+function renderBigProject(L) {
+  const subs = subProjects(L.id);
+  const all = listStats(treeIds(L));
+  const own = S.items.filter(i => i.listId === L.id);
+  const pending = own.filter(i => !i.arrived).sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999'));
+  const arrived = own.filter(i => i.arrived);
+  return `${listHead(L)}
+    ${all.total ? trackerCard(all) : ''}
+    <div class="month"><span>Sub-projects</span><button class="link" data-act="new-sub" data-id="${L.id}">+ New</button></div>
+    ${subs.length ? `<div class="list">${subs.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st)), st.total ? st.done / st.total : null); }).join('')}</div>`
+      : `<button class="empty-card" data-act="new-sub" data-id="${L.id}">Split it into parts, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}
+    ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span></div>
+      ${pending.length ? `<div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}
+      ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
+        ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}` : ''}`;
 }
 
 function listCard(id, icon, title, meta, progress = null) {
@@ -536,9 +606,8 @@ function listCard(id, icon, title, meta, progress = null) {
 }
 
 function renderShopOverview() {
-  const h = listStats('home');
   const g = listStats('groceries');
-  const projects = sortedLists('project');
+  const bigs = bigProjects();
   return `
     <div class="month"><span>Groceries</span>${g.total ? `<button class="link" data-act="open-list" data-id="groceries">${g.pending ? `${g.pending} to get` : 'All in the cart ✓'} ›</button>` : ''}</div>
     <form id="quick-add" class="quick-add" data-list="groceries" autocomplete="off">
@@ -546,36 +615,21 @@ function renderShopOverview() {
       <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
     </form>
 
-    ${homeSection(projects)}`;
+    <div class="month"><span>Projects</span><button class="link" data-act="new-list" data-id="project">+ New project</button></div>
+    ${bigs.length ? `<div class="list">${bigs.map(b => { const st = listStats(treeIds(b)); const n = subProjects(b.id).length;
+        return listCard(b.id, 'project', b.name, esc([n ? `${n} sub-project${n > 1 ? 's' : ''}` : '', st.total ? statsMeta(st) : ''].filter(Boolean).join(' · ') || 'Nothing yet'), st.total ? st.done / st.total : null); }).join('')}</div>`
+      : `<button class="empty-card" data-act="new-list" data-id="project">Create a big project, like <i>“Home”</i> or <i>“Wedding”</i>, then split it into parts like <i>“Living room”</i>. Each one tracks what's done and what's been spent.<br><b>Tap to create one</b></button>`}`;
 }
 
 const statsMeta = st => st.total
   ? `${st.done} of ${st.total} done${st.spent ? ' · ' + money(st.spent) + ' spent' : ''}${st.approx ? ' · ~' + money(st.approx) + ' to go' : ''}`
   : 'Nothing yet';
 
-// "Home" is the big project; rooms/jobs are its sub-projects, plus "General" for everything else
-function homeSection(projects) {
-  const all = listStats(['home', ...projects.map(p => p.id)]);
-  const gen = listStats('home');
-  return `
-    <div class="month"><span>Home</span><button class="link" data-act="new-list" data-id="project">+ New project</button></div>
-    <div class="card home-sum">
-      <div class="split2">
-        <div class="stat"><div class="n">${all.done} / ${all.total}</div><div class="t">done</div></div>
-        <div class="stat"><div class="n">${money(all.spent)}</div><div class="t">spent${all.approx ? ` · ~${money(all.approx)} to go` : ''}</div></div>
-      </div>
-      <div class="bar" style="margin-top:12px"><span style="width:${all.total ? Math.round(all.done / all.total * 100) : 0}%"></span></div>
-    </div>
-    <div class="list">
-      ${projects.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st)), st.total ? st.done / st.total : 0); }).join('')}
-      ${listCard('home', 'home', 'General', esc(gen.total ? statsMeta(gen) : 'Things that aren’t for a specific project'), gen.total ? gen.done / gen.total : null)}
-    </div>
-    ${projects.length ? '' : `<button class="empty-card" data-act="new-list" data-id="project" style="margin-top:12px">Split the home into projects, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}`;
-}
-
 function listHead(L) {
+  const parent = L.parentId && S.lists.find(l => l.id === L.parentId);
   return `<div class="list-head">
-    <button class="back" data-act="shop-back">${svg(ICONS.back, 22)}<span>To buy</span></button>
+    ${parent ? `<button class="back" data-act="open-list" data-id="${parent.id}">${svg(ICONS.back, 22)}<span>${esc(parent.name)}</span></button>`
+      : `<button class="back" data-act="shop-back">${svg(ICONS.back, 22)}<span>To buy</span></button>`}
     ${L.kind === 'project' ? `<button class="icon-btn" data-act="edit-list" data-id="${L.id}" aria-label="Edit list">${svg(ICONS.edit, 20)}</button>` : ''}
   </div>
   <h2 class="list-title">${esc(L.name)}</h2>`;
@@ -601,13 +655,7 @@ function renderItemList(L) {
   const pending = items.filter(i => !i.arrived).sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
   const arrived = items.filter(i => i.arrived).sort((x, y) => (y.arrivedAt || '').localeCompare(x.arrivedAt || ''));
   const st = listStats(L.id);
-  const summary = L.kind === 'project' && st.total ? `<div class="card">
-      <div class="split2">
-        <div class="stat"><div class="n">${st.done} / ${st.total}</div><div class="t">done</div></div>
-        <div class="stat"><div class="n">${money(st.spent)}</div><div class="t">spent${st.approx ? ` · ~${money(st.approx)} to go` : ''}</div></div>
-      </div>
-      <div class="bar" style="margin-top:12px"><span style="width:${Math.round(st.done / st.total * 100)}%"></span></div>
-    </div>` : '';
+  const summary = L.kind === 'project' && st.total ? trackerCard(st) : '';
   return `${listHead(L)}${summary}
     ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${st.approx ? '~' + money(st.approx) : ''}</span></div>
       <div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>`
@@ -879,7 +927,7 @@ function expenseForm(e = null) {
   if (e && e.type === 'transfer') return transferForm(e);
   const trips = sortedTrips();
   const startTrip = e ? (e.tripId || 'none')
-    : (moneyFilter !== 'all' && trips.find(t => t.id === moneyFilter)?.id) || tripOn(today())?.id || 'none';
+    : (tab === 'travel' && currentTrip()?.id) || tripOn(today())?.id || 'none';
   const tripObj = id => trips.find(t => t.id === id);
   const x = e || { amount: '', category: startTrip !== 'none' ? 'food' : 'groceries', paidBy: defPayer(), date: today(), splitA: 50, note: '' };
   const startCur = x.origCurrency || (!e && tripObj(startTrip)?.currency) || mainCur();
@@ -1065,22 +1113,34 @@ function shopChooser() {
   openSheet(`
     <h3>What would you like to add?</h3>
     <button class="choice" data-sheet="grocery">${svg(ICONS.cart)}<span><b>Groceries</b><small>Add to the supermarket list</small></span></button>
-    <button class="choice" data-sheet="item">${svg(ICONS.home)}<span><b>Something for the home</b><small>Then pick which project it's for</small></span></button>
-    <button class="choice" data-sheet="project">${svg(ICONS.project)}<span><b>New home project</b><small>A room or a job, like “Living room”</small></span></button>
+    ${bigProjects().length ? `<button class="choice" data-sheet="item">${svg(ICONS.shop)}<span><b>Something to buy</b><small>For one of your projects</small></span></button>` : ''}
+    <button class="choice" data-sheet="project">${svg(ICONS.project)}<span><b>New project</b><small>A big one, like “Home” or “Wedding”</small></span></button>
   `, {
-    item: () => itemForm(null, 'home'),
+    item: () => itemForm(null, bigProjects()[0]?.id),
     project: () => listForm(null, 'project'),
     grocery: () => { closeSheet(); setShopView('groceries'); setTimeout(() => app.querySelector('#quick-add input')?.focus(), 50); },
   });
 }
 
-function listForm(L = null, kind = L?.kind) {
-  const word = kind === 'project' ? 'home project' : 'grocery list';
-  const n = L ? S.items.filter(i => listOf(i) === L.id).length : 0;
+function bigAddChooser(big) {
+  openSheet(`
+    <h3>Add to ${esc(big.name)}</h3>
+    <button class="choice" data-sheet="item">${svg(ICONS.shop)}<span><b>Something to buy</b><small>Then pick which part it's for</small></span></button>
+    <button class="choice" data-sheet="sub">${svg(ICONS.project)}<span><b>New sub-project</b><small>A part of it, like “Living room”</small></span></button>
+  `, {
+    item: () => itemForm(null, big.id),
+    sub: () => listForm(null, 'project', big.id),
+  });
+}
+
+function listForm(L = null, kind = L?.kind, parentId = L?.parentId || null) {
+  const word = parentId ? 'sub-project' : 'project';
+  const ids = L ? (parentId ? [L.id] : treeIds(L)) : [];
+  const n = S.items.filter(i => ids.includes(i.listId)).length;
   openSheet(`
     <h3>${L ? 'Edit ' + word : 'New ' + word}</h3>
     <div class="field"><label>Name</label>
-      <input name="name" value="${esc(L?.name || '')}" placeholder="${kind === 'project' ? 'e.g. Living room' : 'e.g. Weekly shop'}" ${L ? '' : 'autofocus'}></div>
+      <input name="name" value="${esc(L?.name || '')}" placeholder="${parentId ? 'e.g. Living room' : 'e.g. Home, Wedding'}" ${L ? '' : 'autofocus'}></div>
     <button class="btn" data-sheet="save">${L ? 'Save' : 'Create'}</button>
     ${L ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete ${word}</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
@@ -1088,26 +1148,32 @@ function listForm(L = null, kind = L?.kind) {
       const name = val('name');
       if (!name) return toast('Give it a name');
       if (L) { store.update('lists', L.id, { name }); closeSheet(); return toast('Saved'); }
-      const id = await store.add('lists', { name, kind });
+      const id = await store.add('lists', { name, kind: 'project', parentId });
       closeSheet(); tab = 'shop'; localStorage.setItem('ourhome-tab', tab); setShopView(id);
     },
     delete: () => {
-      if (!confirm(`Delete “${L.name}”${n ? ` and its ${n} item${n > 1 ? 's' : ''}` : ''}? Expenses already added stay.`)) return;
-      S.items.filter(i => listOf(i) === L.id).forEach(i => store.remove('items', i.id));
+      const subs = parentId ? [] : subProjects(L.id);
+      const extra = [subs.length ? `${subs.length} sub-project${subs.length > 1 ? 's' : ''}` : '', n ? `${n} item${n > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ');
+      if (!confirm(`Delete “${L.name}”${extra ? ` with its ${extra}` : ''}? Expenses already added stay.`)) return;
+      S.items.filter(i => ids.includes(i.listId)).forEach(i => store.remove('items', i.id));
+      subs.forEach(sp => store.remove('lists', sp.id));
       store.remove('lists', L.id);
-      closeSheet(); setShopView(null);
+      closeSheet(); setShopView(parentId || null);
     },
   });
 }
 
 function itemForm(i = null, listId = null) {
-  const lid = i ? listOf(i) : (listId || (currentList()?.kind !== 'grocery' && currentList()?.id) || 'home');
+  const lid = i ? listOf(i) : (listId || (currentList()?.kind === 'project' && currentList().id) || bigProjects()[0]?.id || 'home');
   const x = i || { name: '', approx: '', owner: defPayer(), source: 'buy', eta: '', priority: 'normal' };
-  const projects = sortedLists('project');
+  const big = bigOf(S.lists.find(l => l.id === lid));
+  // inside a project: its parts; otherwise: every project and part
+  const options = big ? [...subProjects(big.id).map(p => ({ v: p.id, label: esc(p.name) })), { v: big.id, label: subProjects(big.id).length ? 'Other' : esc(big.name) }]
+    : bigProjects().flatMap(b => [{ v: b.id, label: esc(b.name) }, ...subProjects(b.id).map(p => ({ v: p.id, label: esc(b.name + ' › ' + p.name) }))]);
   openSheet(`
     <h3>${i ? 'Edit item' : 'What do we need?'}</h3>
     <div class="field"><input name="name" value="${esc(x.name)}" placeholder="e.g. Sofa, cat tree, curtains" ${i ? '' : 'autofocus'}></div>
-    ${projects.length ? `<div class="field"><span class="lbl">Project</span>${chips('listId', [...projects.map(p => ({ v: p.id, label: esc(p.name) })), { v: 'home', label: 'General' }], lid)}</div>` : ''}
+    ${options.length > 1 ? `<div class="field"><span class="lbl">${big ? 'Part of ' + esc(big.name) : 'Project'}</span>${chips('listId', options, lid)}</div>` : ''}
     <div class="field"><span class="lbl">Where from?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
     <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], x.owner)}</div>
     <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
@@ -1412,7 +1478,13 @@ app.addEventListener('click', e => {
   switch (el.dataset.act) {
     case 'tab':
       if (tab === 'shop' && id === 'shop' && shopView) return setShopView(null);   // tapping "To buy" again goes back to the overview
+      if (tab === 'travel' && id === 'travel' && travelView) return setTravelView(null);
       tab = id; localStorage.setItem('ourhome-tab', tab); render(); window.scrollTo(0, 0); break;
+    case 'home-view': homeView = id; localStorage.setItem('ourhome-homeview', id); render(); break;
+    case 'open-trip': setTravelView(id); break;
+    case 'trips-back': setTravelView(null); break;
+    case 'new-sub': listForm(null, 'project', id); break;
+    case 'big-add': bigAddChooser(currentList()); break;
     case 'shop-add': shopChooser(); break;
     case 'open-list': setShopView(id); break;
     case 'shop-back': setShopView(null); break;
@@ -1423,7 +1495,6 @@ app.addEventListener('click', e => {
     case 'quick-focus': app.querySelector('#quick-add input')?.focus(); break;
     case 'settings': settingsForm(); break;
     case 'add-expense': expenseForm(); break;
-    case 'money-filter': moneyFilter = id; localStorage.setItem('ourhome-moneyfilter', id); render(); break;
     case 'new-trip': tripForm(); break;
     case 'edit-trip': tripForm((S.trips || []).find(t => t.id === id)); break;
     case 'edit-expense': expenseForm(find('expenses')); break;
@@ -1486,6 +1557,20 @@ function migrateGroceryLists() {
   setTimeout(() => { migrating = false; }, 2000);
 }
 
+let migratingProjects = false;
+async function migrateProjects() {
+  if (migratingProjects || S.settings.projectsV2) return;
+  migratingProjects = true;
+  const oldProjects = S.lists.filter(l => l.kind === 'project' && !l.parentId);
+  const looseItems = S.items.filter(i => !i.listId || i.listId === 'home');
+  if (oldProjects.length || looseItems.length) {
+    const homeId = await store.add('lists', { name: 'Home', kind: 'project', parentId: null });
+    oldProjects.forEach(l => store.update('lists', l.id, { parentId: homeId }));
+    looseItems.forEach(i => store.update('items', i.id, { listId: homeId }));
+  }
+  store.setSettings({ projectsV2: true });
+}
+
 let seeding = false;
 function seedIfNeeded() {
   if (seeding || S.settings.seeded) return;
@@ -1545,6 +1630,7 @@ store.onChange((snap, err) => {
   S = snap;
   seedIfNeeded();
   migrateGroceryLists();
+  migrateProjects();
   if (!device() && sheet.classList.contains('hidden')) setTimeout(askDevice, 400);
   render();
 });

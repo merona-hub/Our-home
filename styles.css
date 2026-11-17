@@ -343,3 +343,8 @@ nav.tabs > button span { white-space: nowrap; }
 .bar.over span { background: var(--danger); }
 .cat-list { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
 .cat-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 16px; }
+
+/* ---------- Segmented switch (Home tab) ---------- */
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--c-soft); border-radius: 14px; padding: 4px; margin-bottom: 14px; }
+.seg button { min-height: 42px; border-radius: 11px; font-weight: 700; color: var(--c); }
+.seg button.on { background: var(--card); box-shadow: 0 1px 3px #343A341f; color: var(--text); }
