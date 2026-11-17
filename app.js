@@ -5,7 +5,7 @@ import { createStore } from './store.js';
 // ================================================================
 const DEFAULTS = {
   houseName: 'Our Home',
-  color: '#2a9d8f',
+  color: '#455B48',
   names: { a: 'Merona', b: 'Daniel' },
   pets: 'Eevee & Stella',
 };
@@ -40,7 +40,7 @@ const SOURCES = [
   { id: 'gift', label: 'Gift', icon: '🎁' },
 ];
 
-const COLORS = ['#2a9d8f', '#3a86ff', '#7b61ff', '#e76f51', '#e05780', '#2b9348', '#c9822b', '#264653'];
+const COLORS = ['#455B48', '#82947D', '#527A5B', '#343A34', '#B97970', '#C49A58'];
 
 const TABS = [
   { id: 'money', label: 'Money', icon: '💰' },
@@ -93,7 +93,7 @@ function toast(msg) {
 function applyTheme() {
   const c = cfg().color;
   document.documentElement.style.setProperty('--c', c);
-  document.documentElement.style.setProperty('--c-soft', c + '1f');
+  document.documentElement.style.setProperty('--c-soft', c === DEFAULTS.color ? '#DCE3D5' : c + '26');
   document.querySelector('meta[name=theme-color]').setAttribute('content', c);
   document.title = cfg().houseName;
 }
@@ -125,6 +125,7 @@ function billStatus(b) {
   if (b.lastPaid && monthKey(b.lastPaid) === thisMonth) return { state: 'paid', label: 'Paid ' + fmtDate(b.lastPaid) };
   if (!b.lastPaid) return { state: 'due', label: 'Due' };
   const next = addMonths(b.lastPaid, b.freq || 1);
+  if (monthKey(next) < thisMonth) return { state: 'due', late: true, label: 'Overdue' };
   if (monthKey(next) <= thisMonth) return { state: 'due', label: 'Due' };
   return { state: 'later', label: 'Next: ' + parseDate(next).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) };
 }
@@ -164,7 +165,7 @@ function render() {
     <header>
       <div>
         <h1>${esc(c.houseName)}</h1>
-        <div class="who">${esc(c.names.a)} · ${esc(c.names.b)}${c.pets ? ' · ' + esc(c.pets) + ' 🐾' : ''}</div>
+        <div class="who">${esc(c.names.a)} · ${esc(c.names.b)}${c.pets ? ' · ' + esc(c.pets) : ''}</div>
       </div>
       <button class="gear" data-act="settings" aria-label="Settings"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </header>
@@ -263,7 +264,7 @@ function renderBills() {
           <div class="meta" style="font-size:14px;color:var(--muted)">
             ${b.amount ? '~' + money(b.amount) + ' · ' : ''}${esc(FREQS.find(f => f.v === +b.freq)?.label || '')} · ${b.owner === 'shared' ? 'shared' : esc(nm(b.owner))}
           </div>
-          <span class="pill ${s.state === 'paid' ? 'ok' : s.state === 'due' ? 'due' : ''}">${esc(s.label)}</span>
+          <span class="pill ${s.state === 'paid' ? 'ok' : s.late ? 'late' : s.state === 'due' ? 'due' : ''}">${esc(s.label)}</span>
         </span>
       </button>
       ${s.state === 'paid'
