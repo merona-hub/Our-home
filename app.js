@@ -350,10 +350,13 @@ function renderBills() {
 // ---------------- Shopping ----------------
 const listOf = i => i.listId || 'home';
 const HOME_LIST = { id: 'home', kind: 'home', name: 'Home' };
+const GROCERY_LIST = { id: 'groceries', kind: 'grocery', name: 'Groceries' };   // one built-in grocery list
+const listById = id => id === 'home' ? HOME_LIST : id === 'groceries' ? GROCERY_LIST : S.lists.find(l => l.id === id);
 
 function currentList() {
   if (!shopView) return null;
   if (shopView === 'home') return HOME_LIST;
+  if (shopView === 'groceries') return GROCERY_LIST;
   return S.lists.find(l => l.id === shopView) || null;
 }
 function setShopView(v) {
@@ -388,9 +391,16 @@ function listCard(id, icon, title, meta, progress = null) {
 
 function renderShopOverview() {
   const h = listStats('home');
+  const g = listStats('groceries');
   const projects = sortedLists('project');
-  const groceries = sortedLists('grocery');
   return `
+    <div class="month"><span>Groceries</span>${g.total ? `<button class="link" data-act="open-list" data-id="groceries">${g.pending ? `${g.pending} to get` : 'All in the cart ✓'} ›</button>` : ''}</div>
+    <form id="quick-add" class="quick-add" data-list="groceries" autocomplete="off">
+      <input name="q" placeholder="Add groceries, e.g. Milk" enterkeyhint="done">
+      <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
+    </form>
+
+    <div class="month"><span>For the home</span></div>
     <div class="list">${listCard('home', 'home', 'Home', h.pending ? `${h.pending} still needed${h.approx ? ' · ~' + money(h.approx) : ''}` : 'Nothing needed right now')}</div>
 
     <div class="month"><span>Projects</span><button class="link" data-act="new-list" data-id="project">+ New</button></div>
@@ -398,19 +408,13 @@ function renderShopOverview() {
       const st = listStats(p.id);
       const meta = st.total ? `${st.done} of ${st.total} done${st.spent ? ' · ' + money(st.spent) + ' spent' : ''}${st.approx ? ' · ~' + money(st.approx) + ' to go' : ''}` : 'No items yet';
       return listCard(p.id, 'project', p.name, esc(meta), st.total ? st.done / st.total : 0);
-    }).join('')}</div>` : `<button class="empty-card" data-act="new-list" data-id="project">A project groups everything for one job, like <i>“Balcony makeover”</i> or <i>“Cats' corner”</i>.<br><b>Tap to start one</b></button>`}
-
-    <div class="month"><span>Grocery lists</span><button class="link" data-act="new-list" data-id="grocery">+ New</button></div>
-    ${groceries.length ? `<div class="list">${groceries.map(g => {
-      const st = listStats(g.id);
-      return listCard(g.id, 'cart', g.name, st.pending ? `${st.pending} to get` : (st.total ? 'All in the cart ✓' : 'Empty'));
-    }).join('')}</div>` : `<button class="empty-card" data-act="new-list" data-id="grocery">A quick list for the supermarket. Tick things off in the store, then add the receipt total in one go.<br><b>Tap to start one</b></button>`}`;
+    }).join('')}</div>` : `<button class="empty-card" data-act="new-list" data-id="project">A project groups everything for one job, like <i>“Balcony makeover”</i> or <i>“Cats' corner”</i>.<br><b>Tap to start one</b></button>`}`;
 }
 
 function listHead(L) {
   return `<div class="list-head">
     <button class="back" data-act="shop-back">${svg(ICONS.back, 22)}<span>To buy</span></button>
-    ${L.id !== 'home' ? `<button class="icon-btn" data-act="edit-list" data-id="${L.id}" aria-label="Edit list">${svg(ICONS.edit, 20)}</button>` : ''}
+    ${L.kind === 'project' ? `<button class="icon-btn" data-act="edit-list" data-id="${L.id}" aria-label="Edit list">${svg(ICONS.edit, 20)}</button>` : ''}
   </div>
   <h2 class="list-title">${esc(L.name)}</h2>`;
 }
@@ -867,13 +871,13 @@ function billForm(b = null) {
 function shopChooser() {
   openSheet(`
     <h3>What would you like to add?</h3>
+    <button class="choice" data-sheet="grocery">${svg(ICONS.cart)}<span><b>Groceries</b><small>Add to the supermarket list</small></span></button>
     <button class="choice" data-sheet="item">${svg(ICONS.home)}<span><b>Something for the home</b><small>A thing the house needs</small></span></button>
     <button class="choice" data-sheet="project">${svg(ICONS.project)}<span><b>New project</b><small>Group everything for one job</small></span></button>
-    <button class="choice" data-sheet="grocery">${svg(ICONS.cart)}<span><b>New grocery list</b><small>A quick list for the supermarket</small></span></button>
   `, {
     item: () => itemForm(null, 'home'),
     project: () => listForm(null, 'project'),
-    grocery: () => listForm(null, 'grocery'),
+    grocery: () => { closeSheet(); setShopView('groceries'); setTimeout(() => app.querySelector('#quick-add input')?.focus(), 50); },
   });
 }
 
@@ -968,7 +972,7 @@ function doneShopping(L) {
 }
 
 function toggleItem(i) {
-  const L = listOf(i) === 'home' ? HOME_LIST : S.lists.find(l => l.id === i.listId);
+  const L = listById(listOf(i));
   if (L && L.kind === 'grocery') {
     store.update('items', i.id, { arrived: !i.arrived });
     return;
@@ -1192,7 +1196,7 @@ app.addEventListener('click', e => {
     case 'new-list': listForm(null, id); break;
     case 'edit-list': listForm(find('lists')); break;
     case 'edit-grocery': groceryForm(find('items')); break;
-    case 'done-shopping': doneShopping(find('lists')); break;
+    case 'done-shopping': doneShopping(listById(id)); break;
     case 'quick-focus': app.querySelector('#quick-add input')?.focus(); break;
     case 'settings': settingsForm(); break;
     case 'add-expense': expenseForm(); break;
@@ -1218,10 +1222,11 @@ app.addEventListener('submit', e => {
   e.preventDefault();
   const input = e.target.querySelector('input');
   const name = input.value.trim();
-  const L = currentList();
-  if (!name || !L) return;
+  const listId = e.target.dataset.list || currentList()?.id;
+  if (!name || !listId) return;
   input.value = '';
-  store.add('items', { name, listId: L.id, arrived: false });
+  store.add('items', { name, listId, arrived: false });
+  if (e.target.dataset.list) toast(`${name} added to groceries`);
 });
 
 function askDevice() {
@@ -1240,6 +1245,21 @@ function askDevice() {
 // ================================================================
 //  First run: add the standard bills
 // ================================================================
+// Old separate grocery lists are merged into the one built-in Groceries list
+let migrating = false;
+function migrateGroceryLists() {
+  if (migrating) return;
+  const old = S.lists.filter(l => l.kind === 'grocery');
+  if (!old.length) return;
+  migrating = true;
+  old.forEach(l => {
+    S.items.filter(i => i.listId === l.id).forEach(i => store.update('items', i.id, { listId: 'groceries' }));
+    store.remove('lists', l.id);
+  });
+  if (old.some(l => l.id === shopView)) shopView = 'groceries';
+  setTimeout(() => { migrating = false; }, 2000);
+}
+
 let seeding = false;
 function seedIfNeeded() {
   if (seeding || S.settings.seeded) return;
@@ -1298,6 +1318,7 @@ store.onChange((snap, err) => {
   }
   S = snap;
   seedIfNeeded();
+  migrateGroceryLists();
   if (!device() && sheet.classList.contains('hidden')) setTimeout(askDevice, 400);
   render();
 });
