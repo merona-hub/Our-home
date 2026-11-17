@@ -1254,7 +1254,7 @@ function seedIfNeeded() {
 function renderLogin(error = '') {
   app.innerHTML = `
     <div class="login">
-      <img class="logo" src="icons/icon-192.png" alt="">
+      <img class="logo" src="icons/icon-192-v2.png" alt="">
       <h1>${esc(DEFAULTS.houseName)}</h1>
       <p>Sign in to see your home's data</p>
       <form id="login">
