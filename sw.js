@@ -1,6 +1,6 @@
 // Offline support: always try the network first (so updates arrive),
 // fall back to the saved copy when there's no connection.
-const CACHE = 'ourhome-v13';
+const CACHE = 'ourhome-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'firebase-config.js', 'manifest.webmanifest', 'icons/icon-192-v2.png'];
 
 self.addEventListener('install', e => {

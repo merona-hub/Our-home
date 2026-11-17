@@ -411,7 +411,7 @@ function renderBills() {
 
 // ---------------- Shopping ----------------
 const listOf = i => i.listId || 'home';
-const HOME_LIST = { id: 'home', kind: 'home', name: 'Home' };
+const HOME_LIST = { id: 'home', kind: 'home', name: 'General' };   // home items not tied to a sub-project
 const GROCERY_LIST = { id: 'groceries', kind: 'grocery', name: 'Groceries' };   // one built-in grocery list
 const listById = id => id === 'home' ? HOME_LIST : id === 'groceries' ? GROCERY_LIST : S.lists.find(l => l.id === id);
 
@@ -427,7 +427,8 @@ function setShopView(v) {
   render(); window.scrollTo(0, 0);
 }
 function listStats(id) {
-  const items = S.items.filter(i => listOf(i) === id);
+  const ids = Array.isArray(id) ? id : [id];
+  const items = S.items.filter(i => ids.includes(listOf(i)));
   const pending = items.filter(i => !i.arrived);
   const spent = items.reduce((s, i) => s + (+(i.expenseId && S.expenses.find(e => e.id === i.expenseId)?.amount) || 0), 0);
   return {
@@ -462,15 +463,31 @@ function renderShopOverview() {
       <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
     </form>
 
-    <div class="month"><span>For the home</span></div>
-    <div class="list">${listCard('home', 'home', 'Home', h.pending ? `${h.pending} still needed${h.approx ? ' · ~' + money(h.approx) : ''}` : 'Nothing needed right now')}</div>
+    ${homeSection(projects)}`;
+}
 
-    <div class="month"><span>Projects</span><button class="link" data-act="new-list" data-id="project">+ New</button></div>
-    ${projects.length ? `<div class="list">${projects.map(p => {
-      const st = listStats(p.id);
-      const meta = st.total ? `${st.done} of ${st.total} done${st.spent ? ' · ' + money(st.spent) + ' spent' : ''}${st.approx ? ' · ~' + money(st.approx) + ' to go' : ''}` : 'No items yet';
-      return listCard(p.id, 'project', p.name, esc(meta), st.total ? st.done / st.total : 0);
-    }).join('')}</div>` : `<button class="empty-card" data-act="new-list" data-id="project">A project groups everything for one job, like <i>“Balcony makeover”</i> or <i>“Cats' corner”</i>.<br><b>Tap to start one</b></button>`}`;
+const statsMeta = st => st.total
+  ? `${st.done} of ${st.total} done${st.spent ? ' · ' + money(st.spent) + ' spent' : ''}${st.approx ? ' · ~' + money(st.approx) + ' to go' : ''}`
+  : 'Nothing yet';
+
+// "Home" is the big project; rooms/jobs are its sub-projects, plus "General" for everything else
+function homeSection(projects) {
+  const all = listStats(['home', ...projects.map(p => p.id)]);
+  const gen = listStats('home');
+  return `
+    <div class="month"><span>Home</span><button class="link" data-act="new-list" data-id="project">+ New project</button></div>
+    <div class="card home-sum">
+      <div class="split2">
+        <div class="stat"><div class="n">${all.done} / ${all.total}</div><div class="t">done</div></div>
+        <div class="stat"><div class="n">${money(all.spent)}</div><div class="t">spent${all.approx ? ` · ~${money(all.approx)} to go` : ''}</div></div>
+      </div>
+      <div class="bar" style="margin-top:12px"><span style="width:${all.total ? Math.round(all.done / all.total * 100) : 0}%"></span></div>
+    </div>
+    <div class="list">
+      ${projects.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st)), st.total ? st.done / st.total : 0); }).join('')}
+      ${listCard('home', 'home', 'General', esc(gen.total ? statsMeta(gen) : 'Things that aren’t for a specific project'), gen.total ? gen.done / gen.total : null)}
+    </div>
+    ${projects.length ? '' : `<button class="empty-card" data-act="new-list" data-id="project" style="margin-top:12px">Split the home into projects, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}`;
 }
 
 function listHead(L) {
@@ -944,8 +961,8 @@ function shopChooser() {
   openSheet(`
     <h3>What would you like to add?</h3>
     <button class="choice" data-sheet="grocery">${svg(ICONS.cart)}<span><b>Groceries</b><small>Add to the supermarket list</small></span></button>
-    <button class="choice" data-sheet="item">${svg(ICONS.home)}<span><b>Something for the home</b><small>A thing the house needs</small></span></button>
-    <button class="choice" data-sheet="project">${svg(ICONS.project)}<span><b>New project</b><small>Group everything for one job</small></span></button>
+    <button class="choice" data-sheet="item">${svg(ICONS.home)}<span><b>Something for the home</b><small>Then pick which project it's for</small></span></button>
+    <button class="choice" data-sheet="project">${svg(ICONS.project)}<span><b>New home project</b><small>A room or a job, like “Living room”</small></span></button>
   `, {
     item: () => itemForm(null, 'home'),
     project: () => listForm(null, 'project'),
@@ -954,12 +971,12 @@ function shopChooser() {
 }
 
 function listForm(L = null, kind = L?.kind) {
-  const word = kind === 'project' ? 'project' : 'grocery list';
+  const word = kind === 'project' ? 'home project' : 'grocery list';
   const n = L ? S.items.filter(i => listOf(i) === L.id).length : 0;
   openSheet(`
     <h3>${L ? 'Edit ' + word : 'New ' + word}</h3>
     <div class="field"><label>Name</label>
-      <input name="name" value="${esc(L?.name || '')}" placeholder="${kind === 'project' ? 'e.g. Balcony makeover' : 'e.g. Weekly shop'}" ${L ? '' : 'autofocus'}></div>
+      <input name="name" value="${esc(L?.name || '')}" placeholder="${kind === 'project' ? 'e.g. Living room' : 'e.g. Weekly shop'}" ${L ? '' : 'autofocus'}></div>
     <button class="btn" data-sheet="save">${L ? 'Save' : 'Create'}</button>
     ${L ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete ${word}</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
@@ -986,7 +1003,7 @@ function itemForm(i = null, listId = null) {
   openSheet(`
     <h3>${i ? 'Edit item' : 'What do we need?'}</h3>
     <div class="field"><input name="name" value="${esc(x.name)}" placeholder="e.g. Sofa, cat tree, curtains" ${i ? '' : 'autofocus'}></div>
-    ${projects.length ? `<div class="field"><span class="lbl">For</span>${chips('listId', [{ v: 'home', label: 'Home' }, ...projects.map(p => ({ v: p.id, label: esc(p.name) }))], lid)}</div>` : ''}
+    ${projects.length ? `<div class="field"><span class="lbl">Project</span>${chips('listId', [...projects.map(p => ({ v: p.id, label: esc(p.name) })), { v: 'home', label: 'General' }], lid)}</div>` : ''}
     <div class="field"><span class="lbl">Where from?</span>${chips('source', SOURCES.map(s => ({ v: s.id, label: s.label })), x.source)}</div>
     <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], x.owner)}</div>
     <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
