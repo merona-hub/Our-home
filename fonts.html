@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Font options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,800&family=Plus+Jakarta+Sans:wght@400;600;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #F5F0E8; color: #343A34; font-family: -apple-system, sans-serif; padding: 16px; }
+  h1 { font-size: 20px; margin: 4px 4px 16px; }
+  .opt { margin-bottom: 28px; }
+  .tag { font-size: 14px; font-weight: 700; color: #6F7369; margin: 0 4px 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .phone { border-radius: 18px; overflow: hidden; background: #F5F0E8; box-shadow: 0 2px 8px #0001; }
+  .hdr { background: #455B48; color: #fff; padding: 16px 18px; }
+  .hdr .t { font-size: 24px; font-weight: 700; }
+  .hdr .w { font-size: 13px; color: #E8D0CC; margin-top: 2px; }
+  .body { padding: 14px; }
+  .card { background: #fff; border-radius: 16px; padding: 18px; text-align: center; margin-bottom: 12px; }
+  .lbl { color: #6F7369; font-size: 16px; }
+  .big { font-size: 44px; font-weight: 800; color: #455B48; line-height: 1.15; }
+  .sub { color: #6F7369; font-size: 15px; }
+  .btn { background: #455B48; color: #fff; border-radius: 16px; padding: 16px; text-align: center; font-size: 19px; font-weight: 600; margin-bottom: 12px; }
+  .row { background: #fff; border-radius: 16px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+  .row b { font-weight: 600; } .row small { display: block; color: #6F7369; font-size: 14px; }
+  .row .a { color: #B97970; font-weight: 700; }
+  .nunito * { font-family: 'Nunito', sans-serif; }
+  .dm * { font-family: 'DM Sans', sans-serif; }
+  .jakarta * { font-family: 'Plus Jakarta Sans', sans-serif; }
+  .fraunces * { font-family: 'DM Sans', sans-serif; }
+  .fraunces .t, .fraunces .big { font-family: 'Fraunces', serif; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Font options for Our Home</h1>
+<div id="opts"></div>
+<script>
+  const opts = [['nunito', '1 · Nunito'], ['dm', '2 · DM Sans'], ['jakarta', '3 · Plus Jakarta Sans'], ['fraunces', '4 · Fraunces + DM Sans']];
+  document.getElementById('opts').innerHTML = opts.map(([c, n]) => `
+    <div class="opt ${c}">
+      <div class="tag">${n}</div>
+      <div class="phone">
+        <div class="hdr"><div class="t">Our Home</div><div class="w">Merona · Daniel · Eevee & Stella</div></div>
+        <div class="body">
+          <div class="card"><div class="lbl">Daniel is owed</div><div class="big">₪1,245</div><div class="sub">Merona pays Daniel</div></div>
+          <div class="btn">＋ Add expense</div>
+          <div class="row"><span><b>Shufersal</b><small>Merona paid · 17 Nov · split half-half</small></span><span class="a">₪300</span></div>
+        </div>
+      </div>
+    </div>`).join('');
+</script>
+</body>
+</html>
