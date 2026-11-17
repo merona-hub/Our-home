@@ -293,8 +293,8 @@ function render() {
   if (ci && ci.remindNow && !(tab === 'home' && homeView === 'contract')) {
     banners.push(`<div class="banner alert">📄 <b>Contract reminder:</b> tell the landlord by <b>${fmtDateLong(ci.deadline)}</b> if you're renewing or leaving (${ci.daysToDeadline} days left).</div>`);
   }
-  const qaEl = document.activeElement && document.activeElement.closest && document.activeElement.closest('#quick-add') ? document.activeElement : null;
-  const qa = qaEl ? { name: qaEl.name, value: qaEl.value } : null;
+  const keepForm = document.activeElement && document.activeElement.closest && document.activeElement.closest('#quick-add, #todo-add');
+  const qa = keepForm ? { form: keepForm.id, name: document.activeElement.name, value: document.activeElement.value } : null;
   app.innerHTML = `
     <header>
       <div>
@@ -309,12 +309,12 @@ function render() {
       <div class="fab-slot"><button class="fab" data-act="${fabAction()}" aria-label="Add">${svg(ICONS.plus, 30)}</button></div>
       ${TABS.slice(2).map(tabBtn).join('')}
     </nav>`;
-  if (qa) { const q = app.querySelector(`#quick-add [name="${qa.name}"]`); if (q) { q.value = qa.value; q.focus(); } }
+  if (qa) { const q = app.querySelector(`#${qa.form} [name="${qa.name}"]`); if (q) { q.value = qa.value; q.focus(); } }
 }
 
 function fabAction() {
   if (tab === 'home') return homeView === 'bills' ? 'add-bill' : 'add-expense';
-  if (tab === 'travel') return !currentTrip() ? 'new-trip' : ({ plan: 'add-plan', places: 'add-place', bookings: 'add-booking' }[tripSeg] || 'add-expense');
+  if (tab === 'travel') return !currentTrip() ? 'new-trip' : ({ plan: 'add-plan', places: 'add-place', bookings: 'add-booking', saved: 'add-social', todo: 'todo-focus' }[tripSeg] || 'add-expense');
   if (tab !== 'shop') return 'add-expense';
   const L = currentList();
   if (!L) return 'shop-add';
@@ -383,8 +383,10 @@ const tripSpent = t => S.expenses.filter(e => e.tripId === t.id && e.type !== 't
 function renderTravel() {
   const t = currentTrip();
   if (t) {
-    const segs = [['money', 'Money'], ['plan', 'Plan'], ['places', 'Places'], ['bookings', 'Bookings']];
+    const nSaved = tripItems(t, 'social').length, nTodo = todosFor('trip', t.id).filter(x => !x.done).length;
+    const segs = [['money', 'Money'], ['plan', 'Plan'], ['places', 'Places'], ['saved', `Saved from socials${nSaved ? ' · ' + nSaved : ''}`], ['bookings', 'Bookings'], ['todo', `To-do${nTodo ? ' · ' + nTodo : ''}`]];
     const body = tripSeg === 'plan' ? renderPlan(t) : tripSeg === 'places' ? renderPlaces(t) : tripSeg === 'bookings' ? renderBookings(t)
+      : tripSeg === 'saved' ? renderSaved(t) : tripSeg === 'todo' ? todoSection('trip', t.id, false)
       : tripSummary(t) + expenseList(S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer'), 'No expenses for this trip yet.');
     return `<div class="list-head">
         <button class="back" data-act="trips-back">${svg(ICONS.back, 22)}<span>Trips</span></button>
@@ -392,7 +394,7 @@ function renderTravel() {
       </div>
       <h2 class="list-title" style="margin-bottom:2px">${esc(t.name)}</h2>
       <div class="trip-sub">${fmtRange(t.start, t.end)}${t.currency && t.currency !== mainCur() ? ' · ' + t.currency : ''}</div>
-      <div class="seg seg4">${segs.map(([k, l]) => `<button class="${tripSeg === k ? 'on' : ''}" data-act="trip-seg" data-id="${k}">${l}</button>`).join('')}</div>
+      <div class="filter-row trip-tabs">${segs.map(([k, l]) => `<button class="${tripSeg === k ? 'on' : ''}" data-act="trip-seg" data-id="${k}">${l}</button>`).join('')}</div>
       ${body}`;
   }
   travelView = null;
@@ -574,11 +576,187 @@ function bookingForm(t, b = null) {
   });
 }
 
+// ---------------- Saved from socials ----------------
+const PLATFORMS = [
+  { id: 'instagram', label: 'Instagram', test: /instagram\.com|instagr\.am/i },
+  { id: 'tiktok', label: 'TikTok', test: /tiktok\.com/i },
+  { id: 'facebook', label: 'Facebook', test: /facebook\.com|fb\.watch|fb\.me/i },
+  { id: 'youtube', label: 'YouTube', test: /youtube\.com|youtu\.be/i },
+  { id: 'web', label: 'Link', test: /./ },
+];
+const platformOf = url => PLATFORMS.find(p => p.test.test(url || '')) || PLATFORMS[PLATFORMS.length - 1];
+const findUrl = text => (String(text || '').match(/https?:\/\/[^\s"'<>]+/i) || [])[0] || '';
+const mapsUrl = x => x.lat ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(x.place || '')}%20${x.lat},${x.lon}`
+  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(x.place || '')}`;
+
+// Look for "📍 Place" in a caption, the way many travel posts tag their location
+function guessPlace(caption) {
+  if (!caption) return '';
+  const m = caption.match(/📍\s*([^\n#@|•]{2,60})/u) || caption.match(/(?:^|\n)\s*(?:location|where|address)\s*[:\-]\s*([^\n#@]{2,60})/i);
+  return m ? m[1].trim().replace(/[.,!]+$/, '') : '';
+}
+// TikTok shares the caption publicly; Instagram and Facebook don't.
+async function fetchCaption(url) {
+  if (!/tiktok\.com/i.test(url)) return '';
+  try {
+    const r = await fetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(url));
+    if (!r.ok) return '';
+    const j = await r.json();
+    return j.title || '';
+  } catch (e) { return ''; }
+}
+// Free place search (OpenStreetMap)
+async function searchPlaces(q) {
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=en&q=' + encodeURIComponent(q));
+  if (!r.ok) throw new Error('Place search is not available right now');
+  return (await r.json()).map(p => ({ name: p.name || p.display_name.split(',')[0], address: p.display_name, lat: +p.lat, lon: +p.lon }));
+}
+
+function renderSaved(t) {
+  const all = tripItems(t, 'social').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return `<button class="btn ghost" data-act="add-social">${svg(ICONS.plus, 20)} Paste a link</button>
+    <div style="text-align:center;margin:6px 0 12px"><button class="link" data-act="share-help">How do I share posts straight to the app?</button></div>
+    ${all.length ? `<div class="list">${all.map(x => swipeable('tripitems', x.id, `<div class="row" style="padding:10px 12px 10px 16px">
+      <span class="plat ${platformOf(x.url).id}">${platformOf(x.url).label.slice(0, 2)}</span>
+      <button class="main" style="text-align:left" data-act="edit-social" data-id="${x.id}">
+        <div class="title">${esc(x.place || 'Place not set')}</div>
+        <div class="meta">${esc([x.address ? x.address.split(',').slice(1, 3).join(',').trim() : '', x.caption ? '“' + x.caption.slice(0, 60) + (x.caption.length > 60 ? '…' : '') + '”' : platformOf(x.url).label].filter(Boolean).join(' · '))}</div>
+      </button>
+      ${x.place ? `<a class="map-btn" href="${esc(mapsUrl(x))}" target="_blank" rel="noopener" aria-label="Open in Google Maps">Map</a>` : ''}
+    </div>`)).join('')}</div>`
+    : `<div class="empty">Save reels and posts about places you want to visit.<br>Share them to the app, or copy the link and tap <b>Paste a link</b>.</div>`}`;
+}
+
+async function socialForm(t, x = null, preset = {}) {
+  const trips = sortedTrips();
+  const d = x || { url: preset.url || '', caption: preset.caption || '', place: '', notes: '' };
+  openSheet(`
+    <h3>${x ? 'Saved from socials' : 'Save from socials'}</h3>
+    ${!x && trips.length > 1 ? `<div class="field"><span class="lbl">Trip</span>${chips('trip', trips.map(tr => ({ v: tr.id, label: '✈️ ' + esc(tr.name) })), t.id)}</div>` : ''}
+    <div class="field"><label>Link to the post</label><input name="url" inputmode="url" value="${esc(d.url)}" placeholder="Paste the Instagram / TikTok / Facebook link"></div>
+    <div class="field"><label>Caption (optional)</label><textarea name="caption" placeholder="Paste the caption if you like, we'll look for the 📍 location in it">${esc(d.caption || '')}</textarea></div>
+    <div class="field"><label>Place</label>
+      <div class="amt-row"><input name="place" value="${esc(d.place || '')}" placeholder="e.g. Ichiran Shibuya"><button type="button" class="btn small" data-sheet="find">Find</button></div>
+      <div id="place-results" class="hint"></div></div>
+    <div class="field"><label>Notes (optional)</label><textarea name="notes">${esc(d.notes || '')}</textarea></div>
+    <div class="btn-row" style="margin-top:0">${x ? `<a class="btn light" href="${esc(x.url)}" target="_blank" rel="noopener">Open post ↗</a>` : ''}${x && x.place ? `<a class="btn light" href="${esc(mapsUrl(x))}" target="_blank" rel="noopener">Google Maps ↗</a>` : ''}</div>
+    <div class="btn-row"><button class="btn" data-sheet="save">${x ? 'Save' : 'Save place'}</button></div>
+    ${x ? `<div class="btn-row"><button class="btn light" data-sheet="toplaces">Add to "Places"</button></div>
+      <div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
+  `, {
+    find: () => findPlace(t),
+    save: () => {
+      const url = val('url'); if (!url && !val('place')) return toast('Paste the link or type the place');
+      const tripId = chipVal('trip') || t.id;
+      const pick = sheet._pick || {};
+      const changedName = x && val('place') !== x.place;
+      const data = { url, caption: val('caption') || null, place: val('place') || null, notes: val('notes') || null,
+        lat: pick.lat ?? (changedName ? null : x?.lat ?? null), lon: pick.lon ?? (changedName ? null : x?.lon ?? null), address: pick.address ?? (changedName ? null : x?.address ?? null) };
+      if (x) store.update('tripitems', x.id, data); else store.add('tripitems', { ...data, tripId, kind: 'social' });
+      closeSheet(); toast('Saved ✓');
+      if (!x) { tab = 'travel'; localStorage.setItem('ourhome-tab', tab); tripSeg = 'saved'; localStorage.setItem('ourhome-tripseg', tripSeg); setTravelView(tripId); }
+    },
+    toplaces: () => {
+      store.add('tripitems', { tripId: x.tripId, kind: 'place', title: val('place') || 'Saved place', notes: val('notes') || null, link: x.place ? mapsUrl(x) : x.url, done: false });
+      closeSheet(); toast('Added to Places ✓');
+    },
+    delete: () => { store.remove('tripitems', x.id); closeSheet(); },
+  });
+  sheet._pick = null;
+  sheet.querySelector('[name=place]').addEventListener('input', () => { sheet._pick = null; });
+  // new post: read the caption if the platform allows, then guess the place and search for it
+  if (!x && d.url) {
+    let caption = d.caption;
+    if (!caption) {
+      caption = await fetchCaption(d.url);
+      if (caption && sheet.querySelector('[name=caption]') && !val('caption')) sheet.querySelector('[name=caption]').value = caption;
+    }
+    const guess = guessPlace(caption);
+    if (guess && !val('place')) { sheet.querySelector('[name=place]').value = guess; findPlace(t); }
+    else if (!guess) sheet.querySelector('#place-results').textContent = platformOf(d.url).id === 'tiktok' && caption ? 'No 📍 location in the caption. Type the place and tap Find.' : 'Type the place name and tap Find.';
+  }
+}
+// update the place guess when a caption is pasted
+document.addEventListener('input', e => {
+  if (e.target.name !== 'caption' || !e.target.closest('#sheet')) return;
+  const g = guessPlace(e.target.value), pl = document.querySelector('#sheet [name=place]');
+  if (g && pl && !pl.value) pl.value = g;
+});
+
+async function findPlace(t) {
+  const q = val('place');
+  const box = sheet.querySelector('#place-results');
+  if (!q) { box.textContent = 'Type a place name first.'; return; }
+  box.textContent = 'Searching…';
+  const tripId = chipVal('trip') || t.id;
+  const tr = (S.trips || []).find(x => x.id === tripId) || t;
+  try {
+    let res = tr.dest ? await searchPlaces(`${q}, ${tr.dest}`) : [];
+    if (!res.length) res = await searchPlaces(q);
+    if (!res.length) { box.textContent = 'Nothing found. Try a shorter name, or just save it as it is.'; return; }
+    box.innerHTML = `<div class="results">${res.map((r, i) => `<button type="button" class="result" data-i="${i}"><b>${esc(r.name)}</b><small>${esc(r.address)}</small></button>`).join('')}</div>`;
+    box.querySelectorAll('.result').forEach(b => b.onclick = () => {
+      const r = res[+b.dataset.i];
+      sheet._pick = { lat: r.lat, lon: r.lon, address: r.address };
+      sheet.querySelector('[name=place]').value = r.name;
+      box.innerHTML = `<span class="picked">📍 ${esc(r.address)}</span>`;
+    });
+  } catch (err) { box.textContent = err.message; }
+}
+
+function shareHelp() {
+  openSheet(`
+    <h3>Share posts to the app</h3>
+    <p><b>On Android:</b> open the app from your home screen once. Then in Instagram / TikTok / Facebook tap <b>Share</b> → <b>Our Home</b>.</p>
+    <p><b>On iPhone</b> (one-time setup, 2 minutes):</p>
+    <ol class="steps">
+      <li>Open the <b>Shortcuts</b> app → tap <b>+</b>.</li>
+      <li>Tap the <b>ⓘ</b> at the bottom → turn on <b>Show in Share Sheet</b>.</li>
+      <li>Tap <b>Add Action</b>, search <b>URL</b> and add the <b>URL</b> action. Type:<br><code>${esc(location.origin + location.pathname)}?share=</code></li>
+      <li>Right after <code>share=</code>, tap <b>Shortcut Input</b> so it's added to the end.</li>
+      <li>Add the <b>Open URLs</b> action below it.</li>
+      <li>Name the shortcut <b>Save to Our Home</b> → Done.</li>
+    </ol>
+    <p>Now in Instagram / TikTok / Facebook: <b>Share</b> → <b>Save to Our Home</b>. It opens in Safari, so sign in there once too.</p>
+    <p><b>Anywhere:</b> copy the post's link, open the trip → Saved from socials → <b>Paste a link</b>.</p>
+    <button class="btn light" data-sheet="close">Got it</button>`);
+}
+
+async function pasteSocial(t) {
+  let url = '';
+  try { url = findUrl(await navigator.clipboard.readText()); } catch (e) { /* no clipboard access */ }
+  socialForm(t, null, { url });
+}
+
+// A post shared into the app (Android share menu, or the iPhone shortcut's ?share= link)
+function takeSharedPost() {
+  const q = new URLSearchParams(location.search);
+  const raw = q.get('share') || q.get('url') || q.get('text') || '';
+  if (!raw && !q.has('share-target')) return;
+  const url = findUrl(raw) || findUrl(q.get('text')) || raw;
+  const caption = (q.get('text') || '').replace(url, '').trim();
+  localStorage.setItem('ourhome-pending-share', JSON.stringify({ url, caption }));
+  history.replaceState(null, '', location.pathname);
+}
+takeSharedPost();
+function handlePendingShare() {
+  const raw = localStorage.getItem('ourhome-pending-share');
+  if (!raw || !S || !sheet.classList.contains('hidden')) return;
+  localStorage.removeItem('ourhome-pending-share');
+  const { url, caption } = JSON.parse(raw);
+  const trips = sortedTrips();
+  const now = today();
+  const t = tripOn(now) || [...trips].reverse().find(x => x.start && x.start >= now) || trips[0];
+  if (!t) { toast('Create a trip first, then share the post again'); tab = 'travel'; render(); return; }
+  socialForm(t, null, { url, caption });
+}
+
 function tripForm(t = null) {
   const x = t || { name: '', start: '', end: '', currency: mainCur(), budget: '' };
   openSheet(`
     <h3>${t ? 'Edit trip' : 'New trip'}</h3>
-    <div class="field"><label>Where to?</label><input name="name" value="${esc(x.name)}" placeholder="e.g. Japan 2027" ${t ? '' : 'autofocus'}></div>
+    <div class="field"><label>Trip name</label><input name="name" value="${esc(x.name)}" placeholder="e.g. Japan 2027" ${t ? '' : 'autofocus'}></div>
+    <div class="field"><label>Country / city</label><input name="dest" value="${esc(x.dest || '')}" placeholder="e.g. Japan"><div class="hint">Used to find places you save from social media.</div></div>
     <div class="field"><label>From</label><input type="date" name="start" value="${esc(x.start || '')}"></div>
     <div class="field"><label>To</label><input type="date" name="end" value="${esc(x.end || '')}"></div>
     <div class="field"><label>Local currency</label><div class="select-wrap"><select name="tripcur" class="plain-select">
@@ -593,7 +771,7 @@ function tripForm(t = null) {
       if (!name) return toast('Where are you going?');
       const start = val('start') || null, end = val('end') || null;
       if (start && end && end < start) return toast('The end date is before the start date');
-      const data = { name, start, end, currency: sheet.querySelector('[name=tripcur]').value, budget: num('budget') };
+      const data = { name, dest: val('dest') || null, start, end, currency: sheet.querySelector('[name=tripcur]').value, budget: num('budget') };
       if (t) store.update('trips', t.id, data);
       closeSheet();
       if (!t) { const id = await store.add('trips', data); tab = 'travel'; localStorage.setItem('ourhome-tab', tab); setTravelView(id); }
@@ -603,6 +781,7 @@ function tripForm(t = null) {
       if (!confirm(`Delete “${t.name}”? Its expenses stay in the list.`)) return;
       S.expenses.filter(e => e.tripId === t.id).forEach(e => store.update('expenses', e.id, { tripId: null }));
       (S.tripitems || []).filter(x => x.tripId === t.id).forEach(x => store.remove('tripitems', x.id));
+      todosFor('trip', t.id).forEach(x => store.remove('todos', x.id));
       store.remove('trips', t.id);
       closeSheet(); setTravelView(null);
     },
@@ -774,6 +953,40 @@ function trackerCard(st, L = {}) {
   </div>`;
 }
 
+// ---------------- To-do lists ----------------
+const todosFor = (type, id) => (S.todos || []).filter(t => t.parentType === type && t.parentId === id);
+let showDoneTodos = false;
+function todoSection(type, id, withHeader = true) {
+  const all = todosFor(type, id);
+  const open = all.filter(t => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || (a.createdAt || 0) - (b.createdAt || 0));
+  const done = all.filter(t => t.done);
+  const row = t => `<div class="row ${t.done ? 'done' : ''}" style="padding:8px 16px;min-height:56px">
+      <button class="check ${t.done ? 'on' : ''}" data-act="toggle-todo" data-id="${t.id}" aria-label="Done">${t.done ? '✓' : ''}</button>
+      <button class="main" style="text-align:left" data-act="edit-todo" data-id="${t.id}"><div class="title">${esc(t.title)}</div>
+        ${t.due || (t.owner && t.owner !== 'none') ? `<div class="meta">${esc([t.owner && t.owner !== 'none' ? ownerLabel(t.owner) : '', t.due ? 'by ' + fmtDate(t.due) : ''].filter(Boolean).join(' · '))}</div>` : ''}</button></div>`;
+  return `${withHeader ? `<div class="month"><span>To-do${open.length ? ` (${open.length})` : ''}</span></div>` : ''}
+    <form class="quick-add todo-add" id="todo-add" data-keep data-type="${type}" data-id="${id}" autocomplete="off">
+      <input name="t" placeholder="Add a task, e.g. Measure the wall" enterkeyhint="done">
+      <button type="submit" aria-label="Add">${svg(ICONS.plus, 22)}</button>
+    </form>
+    ${open.length ? `<div class="list">${open.map(t => swipeable('todos', t.id, row(t))).join('')}</div>` : ''}
+    ${done.length ? `<div class="month"><button class="link" data-act="toggle-done-todos">${showDoneTodos ? '▾' : '▸'} Done (${done.length})</button></div>
+      ${showDoneTodos ? `<div class="list">${done.map(t => swipeable('todos', t.id, row(t))).join('')}</div>` : ''}` : ''}`;
+}
+function todoForm(t) {
+  openSheet(`
+    <h3>Edit task</h3>
+    <div class="field"><label>Task</label><input name="title" value="${esc(t.title)}"></div>
+    <div class="field"><span class="lbl">Who's on it?</span>${chips('owner', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], t.owner || 'none')}</div>
+    <div class="field"><label>By when? (optional)</label><input type="date" name="due" value="${esc(t.due || '')}"></div>
+    <button class="btn" data-sheet="save">Save</button>
+    <div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>
+  `, {
+    save: () => { const title = val('title'); if (!title) return toast('Type the task'); store.update('todos', t.id, { title, owner: chipVal('owner'), due: val('due') || null }); closeSheet(); },
+    delete: () => { store.remove('todos', t.id); closeSheet(); },
+  });
+}
+
 function renderBigProject(L) {
   const subs = subProjects(L.id);
   const all = listStats(treeIds(L));
@@ -785,6 +998,7 @@ function renderBigProject(L) {
     <div class="month"><span>Sub-projects</span><button class="link" data-act="new-sub" data-id="${L.id}">+ New</button></div>
     ${subs.length ? `<div class="list">${subs.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st, p)), st.total ? st.done / st.total : null); }).join('')}</div>`
       : `<button class="empty-card" data-act="new-sub" data-id="${L.id}">Split it into parts, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}
+    ${todoSection('list', L.id)}
     ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span></div>
       ${pending.length ? `<div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}
       ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
@@ -833,6 +1047,8 @@ function itemRow(i) {
   const src = SOURCES.find(s => s.id === i.source) || SOURCES[0];
   const bits = [src.label, ownerLabel(i.owner)];
   if (i.approx) bits.push('~' + money(i.approx) + (i.approxCur ? ` (${fmtIn(i.approxOrig, i.approxCur)})` : ''));
+  if (i.seller) bits.push('from ' + i.seller);
+  if (i.link) bits.push('🔗');
   if (i.arrived) bits.push('arrived ' + fmtDate(i.arrivedAt));
   else if (i.eta) bits.push('arrives ' + fmtDate(i.eta));
   return `<div class="row ${i.arrived ? 'done' : ''}" style="padding:10px 16px">
@@ -855,7 +1071,8 @@ function renderItemList(L) {
       <div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>`
       : `<div class="empty">${items.length ? 'Everything is here 🎉' : 'Nothing here yet.'}<br>Tap <b>+</b> to add something.</div>`}
     ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
-      ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}`;
+      ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}
+    ${L.kind === 'project' ? todoSection('list', L.id) : ''}`;
 }
 
 function renderGrocery(L) {
@@ -1198,7 +1415,7 @@ function swipeDelete(col, id) {
     });
   } else {
     store.remove(col, id);
-    toast(`“${obj.name || obj.title}” deleted`, () => store.restore(col, id, data));
+    toast(`“${obj.name || obj.title || obj.place || 'Item'}” deleted`, () => store.restore(col, id, data));
   }
 }
 
@@ -1357,6 +1574,7 @@ function listForm(L = null, kind = L?.kind, parentId = L?.parentId || null) {
       const extra = [subs.length ? `${subs.length} sub-project${subs.length > 1 ? 's' : ''}` : '', n ? `${n} item${n > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ');
       if (!confirm(`Delete “${L.name}”${extra ? ` with its ${extra}` : ''}? Expenses already added stay.`)) return;
       S.items.filter(i => ids.includes(i.listId)).forEach(i => store.remove('items', i.id));
+      (S.todos || []).filter(x => x.parentType === 'list' && [...ids, ...subs.map(sp => sp.id)].includes(x.parentId)).forEach(x => store.remove('todos', x.id));
       subs.forEach(sp => store.remove('lists', sp.id));
       store.remove('lists', L.id);
       closeSheet(); setShopView(parentId || null);
@@ -1380,6 +1598,9 @@ function itemForm(i = null, listId = null) {
     <div class="field"><span class="lbl">Priority</span>${chips('priority', PRIORITIES.map(p => ({ v: p.v, label: p.label })), x.priority || 'normal')}</div>
     ${amountField('approx', 'About how much?', (x.approxCur ? x.approxOrig : x.approx) || '', x.approxCur || mainCur(), { big: false })}
     <div class="field"><label>When does it arrive? (optional)</label><input type="date" name="eta" value="${esc(x.eta || '')}"></div>
+    <div class="field"><label>Where from? (optional)</label><input name="seller" value="${esc(x.seller || '')}" placeholder="e.g. IKEA, Facebook Marketplace, Amazon"></div>
+    <div class="field"><label>Link (optional)</label><input name="link" inputmode="url" value="${esc(x.link || '')}" placeholder="Paste the product page"></div>
+    ${i && i.link ? linkBtn(i.link) : ''}
     <button class="btn" data-sheet="save">${i ? 'Save' : 'Add to list'}</button>
     ${i ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
@@ -1389,7 +1610,7 @@ function itemForm(i = null, listId = null) {
       const chosen = chipVal('listId') || lid;
       let conv;
       try { conv = await readAmount('approx'); } catch (err) { return toast(err.message); }
-      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: conv.amount, approxOrig: conv.origAmount, approxCur: conv.origCurrency, eta: val('eta') || null, listId: chosen === 'home' ? null : chosen };
+      const data = { name, source: chipVal('source'), owner: chipVal('owner'), priority: chipVal('priority') || 'normal', approx: conv.amount, approxOrig: conv.origAmount, approxCur: conv.origCurrency, eta: val('eta') || null, seller: val('seller') || null, link: val('link') || null, listId: chosen === 'home' ? null : chosen };
       if (i) store.update('items', i.id, data); else store.add('items', { ...data, arrived: false });
       closeSheet(); toast(i ? 'Saved' : 'Added to the list');
     },
@@ -1692,6 +1913,13 @@ app.addEventListener('click', e => {
     case 'edit-place': placeForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'toggle-place': { const pl = S.tripitems.find(x => x.id === id); store.update('tripitems', id, { done: !pl.done }); break; }
     case 'add-booking': bookingForm(currentTrip()); break;
+    case 'add-social': pasteSocial(currentTrip()); break;
+    case 'edit-social': socialForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
+    case 'share-help': shareHelp(); break;
+    case 'toggle-todo': { const td = S.todos.find(x => x.id === id); store.update('todos', id, { done: !td.done }); break; }
+    case 'edit-todo': todoForm(S.todos.find(x => x.id === id)); break;
+    case 'toggle-done-todos': showDoneTodos = !showDoneTodos; render(); break;
+    case 'todo-focus': app.querySelector('#todo-add input')?.focus(); break;
     case 'edit-booking': bookingForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'add-regular': { const g = groceryCounts()[id]; if (g) { addGrocery(g.name, g.store); toast(`${g.name} added`); } break; }
     case 'remove-regular': { const all = groceryCounts(); store.setSettings({ groceryCounts: { ...all, [id]: { ...all[id], hidden: true } } }); break; }
@@ -1729,6 +1957,15 @@ app.addEventListener('click', e => {
 });
 
 app.addEventListener('submit', e => {
+  if (e.target.id === 'todo-add') {
+    e.preventDefault();
+    const input = e.target.querySelector('[name=t]');
+    const title = input.value.trim();
+    if (!title) return;
+    input.value = '';
+    store.add('todos', { title, parentType: e.target.dataset.type, parentId: e.target.dataset.id, done: false });
+    return;
+  }
   if (e.target.id !== 'quick-add') return;
   e.preventDefault();
   const input = e.target.querySelector('[name=q]');
@@ -1749,8 +1986,8 @@ function askDevice() {
     <button class="choice" data-sheet="a"><span><b>${esc(nm('a'))}</b></span></button>
     <button class="choice" data-sheet="b"><span><b>${esc(nm('b'))}</b></span></button>
   `, {
-    a: () => { localStorage.setItem('ourhome-device', 'a'); closeSheet(); render(); },
-    b: () => { localStorage.setItem('ourhome-device', 'b'); closeSheet(); render(); },
+    a: () => { localStorage.setItem('ourhome-device', 'a'); closeSheet(); render(); setTimeout(handlePendingShare, 300); },
+    b: () => { localStorage.setItem('ourhome-device', 'b'); closeSheet(); render(); setTimeout(handlePendingShare, 300); },
   });
 }
 
@@ -1848,6 +2085,7 @@ store.onChange((snap, err) => {
   migrateProjects();
   if (!device() && sheet.classList.contains('hidden')) setTimeout(askDevice, 400);
   render();
+  if (device()) setTimeout(handlePendingShare, 300);
 });
 
 store.init(user => {

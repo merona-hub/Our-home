@@ -373,3 +373,28 @@ nav.tabs > button span { white-space: nowrap; }
 .row .time { width: 48px; flex: none; font-weight: 700; color: var(--c); font-size: 15px; }
 .tick { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 4px 0 6px; }
 .tick input { width: 22px; height: 22px; accent-color: var(--c); }
+
+/* ---------- Trip section pills ---------- */
+.trip-tabs { margin-bottom: 16px; }
+.trip-tabs button { min-height: 42px; }
+
+/* ---------- To-do ---------- */
+.todo-add { margin-bottom: 10px; }
+
+/* ---------- Saved from socials ---------- */
+.plat { width: 42px; height: 42px; border-radius: 12px; flex: none; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; background: var(--c2); }
+.plat.instagram { background: #B97970; }
+.plat.tiktok { background: #343A34; }
+.plat.facebook { background: #5A7A9A; }
+.plat.youtube { background: #B65D59; }
+.map-btn { flex: none; padding: 8px 12px; border-radius: 10px; background: var(--c-soft); color: var(--c); font-weight: 700; font-size: 14px; text-decoration: none; }
+.results { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.result { text-align: left; padding: 10px 12px; border-radius: 12px; background: var(--bg); border: 1.5px solid var(--line); }
+.result b { display: block; color: var(--text); font-size: 16px; }
+.result small { color: var(--muted); font-size: 13px; }
+.result:active { border-color: var(--c); }
+.picked { color: var(--ok); font-weight: 600; }
+.steps { padding-left: 22px; line-height: 1.6; }
+.steps li { margin-bottom: 6px; }
+code { background: var(--bg); padding: 2px 6px; border-radius: 6px; font-size: 14px; word-break: break-all; }
+#sheet p { line-height: 1.5; }
