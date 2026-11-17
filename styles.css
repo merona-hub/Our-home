@@ -327,3 +327,19 @@ nav.tabs > button span { white-space: nowrap; }
 .cur-pick::after { right: 14px; }
 .conv:empty { display: none; }
 .conv { color: var(--c); font-weight: 600; }
+
+/* ---------- Trips ---------- */
+.filter-row { display: flex; gap: 8px; overflow-x: auto; margin: -2px -16px 14px; padding: 2px 16px; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-row button { flex: none; min-height: 40px; padding: 0 16px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--line); font-weight: 700; font-size: 15px; color: var(--text); white-space: nowrap; }
+.filter-row button.on { background: var(--c); border-color: var(--c); color: #fff; }
+.filter-row button.add { color: var(--c); border-style: dashed; background: transparent; }
+.trip-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.trip-name { font-size: 22px; font-weight: 800; }
+.trip-card .meta { font-size: 14px; color: var(--muted); }
+.trip-spent { margin: 14px 0 8px; }
+.trip-spent .big-n { font-size: 34px; font-weight: 800; color: var(--c); }
+.trip-spent .of { color: var(--muted); font-size: 17px; }
+.bar.over span { background: var(--danger); }
+.cat-list { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
+.cat-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 16px; }

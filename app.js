@@ -16,6 +16,15 @@ const CATEGORIES = [
   { id: 'home', label: 'For the home', icon: '🛋️' },
   { id: 'other', label: 'Other', icon: '✨' },
 ];
+const TRIP_CATEGORIES = [
+  { id: 'flights', label: 'Flights', icon: '✈️' },
+  { id: 'hotel', label: 'Hotel', icon: '🏨' },
+  { id: 'food', label: 'Food', icon: '🍜' },
+  { id: 'activities', label: 'Activities', icon: '🎟️' },
+  { id: 'transport', label: 'Transport', icon: '🚆' },
+  { id: 'shopping', label: 'Shopping', icon: '🛍️' },
+  { id: 'other', label: 'Other', icon: '✨' },
+];
 
 const DEFAULT_BILLS = [
   { name: 'Property tax (Arnona)', freq: 2, amount: 0, owner: 'shared', icon: '🏛️' },
@@ -168,6 +177,7 @@ const store = createStore();
 let S = null;                       // latest data snapshot
 let tab = localStorage.getItem('ourhome-tab') || 'money';
 let showArrived = false;
+let moneyFilter = localStorage.getItem('ourhome-moneyfilter') || 'all';   // 'all' or a trip id
 let shopView = localStorage.getItem('ourhome-shopview') || null;   // null = overview, 'home', or a list id
 const app = document.getElementById('app');
 
@@ -201,7 +211,7 @@ const nm = p => cfg().names[p] || p;
 const device = () => localStorage.getItem('ourhome-device');            // which person uses this phone
 const defPayer = () => device() || defPayer();
 const ownerLabel = o => o === 'both' ? 'Both' : o === 'none' ? 'Undecided' : nm(o);
-const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
+const cat = id => CATEGORIES.find(c => c.id === id) || TRIP_CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
 
 function toast(msg, undo = null) {
   const t = document.getElementById('toast');
@@ -328,7 +338,17 @@ function renderMoney() {
     </div>`;
   }
 
-  const sorted = [...S.expenses].sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.createdAt || 0) - (x.createdAt || 0));
+  const trips = sortedTrips();
+  const trip = moneyFilter !== 'all' ? trips.find(t => t.id === moneyFilter) : null;
+  if (!trip) moneyFilter = 'all';
+  const filterRow = `<div class="filter-row">
+      <button class="${!trip ? 'on' : ''}" data-act="money-filter" data-id="all">All</button>
+      ${trips.map(t => `<button class="${trip && trip.id === t.id ? 'on' : ''}" data-act="money-filter" data-id="${t.id}">✈️ ${esc(t.name)}</button>`).join('')}
+      <button class="add" data-act="new-trip">+ Trip</button>
+    </div>`;
+
+  const source = trip ? S.expenses.filter(e => e.tripId === trip.id && e.type !== 'transfer') : S.expenses;
+  const sorted = [...source].sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.createdAt || 0) - (x.createdAt || 0));
   const groups = {};
   for (const e of sorted) (groups[monthKey(e.date)] ||= []).push(e);
 
@@ -336,11 +356,74 @@ function renderMoney() {
     const total = items.filter(e => e.type !== 'transfer').reduce((s, e) => s + (+e.amount || 0), 0);
     return `<div class="month"><span>${fmtMonth(k)}</span><span>${money(total)}</span></div>
       <div class="list">${items.map(e => swipeable('expenses', e.id, expenseRow(e))).join('')}</div>`;
-  }).join('') : `<div class="empty">No expenses yet.<br>Tap the <b>+</b> button below to add one.</div>`;
+  }).join('') : `<div class="empty">${trip ? 'No expenses for this trip yet.' : 'No expenses yet.'}<br>Tap the <b>+</b> button below to add one.</div>`;
 
   return `
-    ${hero}
+    ${filterRow}
+    ${trip ? tripSummary(trip) : hero}
     ${list}`;
+}
+
+// ---------------- Trips ----------------
+const sortedTrips = () => [...(S.trips || [])].sort((x, y) => (y.start || '').localeCompare(x.start || '') || (y.createdAt || 0) - (x.createdAt || 0));
+const tripOn = date => sortedTrips().find(t => t.start && t.end && date >= t.start && date <= t.end);
+const fmtRange = (a, b) => a && b ? `${fmtDate(a)} – ${fmtDate(b)}` : a ? 'from ' + fmtDate(a) : '';
+
+function tripSummary(t) {
+  const ex = S.expenses.filter(e => e.tripId === t.id && e.type !== 'transfer');
+  const spent = ex.reduce((s, e) => s + (+e.amount || 0), 0);
+  const budget = +t.budget || 0;
+  const over = budget && spent > budget;
+  const byCat = {};
+  ex.forEach(e => { byCat[e.category] = (byCat[e.category] || 0) + (+e.amount || 0); });
+  const paid = { a: 0, b: 0 };
+  ex.forEach(e => { paid[e.paidBy] = (paid[e.paidBy] || 0) + (+e.amount || 0); });
+  const cats = Object.entries(byCat).sort((x, y) => y[1] - x[1]);
+  return `<div class="card trip-card">
+    <div class="trip-top">
+      <div><div class="trip-name">${esc(t.name)}</div><div class="meta">${fmtRange(t.start, t.end)}${t.currency && t.currency !== mainCur() ? ' · ' + t.currency : ''}</div></div>
+      <button class="icon-btn" data-act="edit-trip" data-id="${t.id}" aria-label="Edit trip">${svg(ICONS.edit, 20)}</button>
+    </div>
+    <div class="trip-spent"><span class="big-n">${money(spent)}</span>${budget ? `<span class="of"> of ${money(budget)}</span>` : ' spent'}</div>
+    ${budget ? `<div class="bar ${over ? 'over' : ''}"><span style="width:${Math.min(100, Math.round(spent / budget * 100))}%"></span></div>
+      <div class="meta" style="margin-top:6px">${over ? `<b style="color:var(--danger)">${money(spent - budget)} over budget</b>` : `${money(budget - spent)} left`}</div>` : ''}
+    ${cats.length ? `<div class="cat-list">${cats.map(([c, v]) => `<div class="cat-row"><span>${cat(c).icon} ${esc(cat(c).label)}</span><b>${money(v)}</b></div>`).join('')}</div>` : ''}
+    ${spent ? `<div class="meta" style="margin-top:10px">${esc(nm('a'))} paid ${money(paid.a)} · ${esc(nm('b'))} paid ${money(paid.b)}</div>` : ''}
+  </div>`;
+}
+
+function tripForm(t = null) {
+  const x = t || { name: '', start: '', end: '', currency: mainCur(), budget: '' };
+  openSheet(`
+    <h3>${t ? 'Edit trip' : 'New trip'}</h3>
+    <div class="field"><label>Where to?</label><input name="name" value="${esc(x.name)}" placeholder="e.g. Japan 2027" ${t ? '' : 'autofocus'}></div>
+    <div class="field"><label>From</label><input type="date" name="start" value="${esc(x.start || '')}"></div>
+    <div class="field"><label>To</label><input type="date" name="end" value="${esc(x.end || '')}"></div>
+    <div class="field"><label>Local currency</label><div class="select-wrap"><select name="tripcur" class="plain-select">
+      ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (x.currency || mainCur()) ? 'selected' : ''}>${c.label}</option>`).join('')}
+    </select></div><div class="hint">New expenses for this trip start in this currency.</div></div>
+    <div class="field"><label>Budget (${cur()}, optional)</label><input name="budget" inputmode="decimal" value="${esc(x.budget || '')}" placeholder="0"></div>
+    <button class="btn" data-sheet="save">${t ? 'Save' : 'Create trip'}</button>
+    ${t ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete trip</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
+  `, {
+    save: async () => {
+      const name = val('name');
+      if (!name) return toast('Where are you going?');
+      const start = val('start') || null, end = val('end') || null;
+      if (start && end && end < start) return toast('The end date is before the start date');
+      const data = { name, start, end, currency: sheet.querySelector('[name=tripcur]').value, budget: num('budget') };
+      if (t) store.update('trips', t.id, data);
+      else { const id = await store.add('trips', data); moneyFilter = id; localStorage.setItem('ourhome-moneyfilter', id); }
+      closeSheet(); render(); toast(t ? 'Saved' : 'Trip created ✈️');
+    },
+    delete: () => {
+      if (!confirm(`Delete “${t.name}”? Its expenses stay in the list.`)) return;
+      S.expenses.filter(e => e.tripId === t.id).forEach(e => store.update('expenses', e.id, { tripId: null }));
+      store.remove('trips', t.id);
+      moneyFilter = 'all'; localStorage.setItem('ourhome-moneyfilter', 'all');
+      closeSheet();
+    },
+  });
 }
 
 // Wrap a row so it can be swiped left to delete
@@ -366,7 +449,7 @@ function expenseRow(e) {
   return `<button class="row" data-act="edit-expense" data-id="${e.id}">
     <span class="ico">${c.icon}</span>
     <span class="main"><div class="title">${esc(e.note || c.label)}</div>
-      <div class="meta">${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
+      <div class="meta">${e.tripId && moneyFilter === 'all' && S.trips?.find(t => t.id === e.tripId) ? '✈️ ' + esc(S.trips.find(t => t.id === e.tripId).name) + ' · ' : ''}${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
     <span class="amt">${money(e.amount)}</span></button>`;
 }
 
@@ -690,6 +773,7 @@ let sheetHandlersFor = null;   // optional hook for chips with dynamic names
 
 function openSheet(html, handlers = {}) {
   sheetHandlers = handlers;
+  delete sheet.dataset.curTouched;
   sheet.innerHTML = `<div class="grab-zone"><div class="grab"></div></div>${html}`;
   sheet.classList.remove('hidden');
   backdrop.classList.remove('hidden');
@@ -740,7 +824,7 @@ sheet.addEventListener('input', e => {
 });
 sheet.addEventListener('change', e => {
   const n = e.target.name || '';
-  if (n.endsWith('-cur')) updateConv(n.slice(0, -4));
+  if (n.endsWith('-cur')) { updateConv(n.slice(0, -4)); sheet.dataset.curTouched = '1'; }
   if (n === 'date') sheet.querySelectorAll('.conv').forEach(h => updateConv(h.dataset.for));
 });
 sheet.addEventListener('change', e => {
@@ -793,13 +877,25 @@ function splitChoice(a) { return a === 50 ? '50' : a === 100 ? 'a' : a === 0 ? '
 
 function expenseForm(e = null) {
   if (e && e.type === 'transfer') return transferForm(e);
-  const x = e || { amount: '', category: 'groceries', paidBy: defPayer(), date: today(), splitA: 50, note: '' };
+  const trips = sortedTrips();
+  const startTrip = e ? (e.tripId || 'none')
+    : (moneyFilter !== 'all' && trips.find(t => t.id === moneyFilter)?.id) || tripOn(today())?.id || 'none';
+  const tripObj = id => trips.find(t => t.id === id);
+  const x = e || { amount: '', category: startTrip !== 'none' ? 'food' : 'groceries', paidBy: defPayer(), date: today(), splitA: 50, note: '' };
+  const startCur = x.origCurrency || (!e && tripObj(startTrip)?.currency) || mainCur();
+  const catChips = (tripId, selected) => {
+    const list = tripId && tripId !== 'none' ? TRIP_CATEGORIES : CATEGORIES;
+    const sel = list.some(c => c.id === selected) ? selected : list[tripId !== 'none' ? 2 : 0].id;
+    return chips('category', list.map(c => ({ v: c.id, label: c.icon + ' ' + c.label })), sel);
+  };
+  let curTouched = !!e;
   const sc = splitChoice(x.splitA ?? 50);
   openSheet(`
     <h3>${e ? 'Edit expense' : 'Add expense'}</h3>
-    ${amountField('amount', 'How much?', x.origCurrency ? x.origAmount : x.amount, x.origCurrency || mainCur(), { autofocus: !e })}
+    ${amountField('amount', 'How much?', x.origCurrency ? x.origAmount : x.amount, startCur, { autofocus: !e })}
+    ${trips.length ? `<div class="field"><span class="lbl">Trip</span>${chips('trip', [{ v: 'none', label: 'Not a trip' }, ...trips.map(t => ({ v: t.id, label: '✈️ ' + esc(t.name) }))], startTrip)}</div>` : ''}
     <div class="field"><span class="lbl">What for?</span>
-      ${chips('category', CATEGORIES.map(c => ({ v: c.id, label: c.icon + ' ' + c.label })), x.category)}
+      <div id="cat-chips">${catChips(startTrip, x.category)}</div>
       <input name="note" placeholder="Details (optional)" value="${esc(x.note)}" style="margin-top:10px"></div>
     <div class="field"><span class="lbl">Who paid?</span>${chips('paidBy', people(), x.paidBy)}</div>
     <div class="field"><label>When?</label><input type="date" name="date" value="${esc(x.date)}"></div>
@@ -813,6 +909,13 @@ function expenseForm(e = null) {
     ${e ? `<div class="btn-row"><button class="btn danger" data-sheet="delete">Delete</button><button class="btn light" data-sheet="close">Cancel</button></div>` : ''}
   `, {
     'chip:split': v => sheet.querySelector('#custom-split').classList.toggle('hidden', v !== 'custom'),
+    'chip:trip': v => {
+      sheet.querySelector('#cat-chips').innerHTML = catChips(v, chipVal('category'));
+      if (!curTouched && !sheet.dataset.curTouched) {
+        sheet.querySelector('[name="amount-cur"]').value = (v !== 'none' && tripObj(v)?.currency) || mainCur();
+        updateConv('amount');
+      }
+    },
     save: async () => {
       if (num('amount') <= 0) return toast('Please enter an amount');
       let conv;
@@ -822,7 +925,8 @@ function expenseForm(e = null) {
       if (split === 'custom') splitA = Math.min(100, Math.max(0, num('splitA')));
       const paidBy = chipVal('paidBy');
       localStorage.setItem('ourhome-me', paidBy);
-      const data = { ...conv, category: chipVal('category'), note: val('note'), paidBy, date: val('date') || today(), splitA };
+      const tripId = chipVal('trip');
+      const data = { ...conv, category: chipVal('category'), note: val('note'), paidBy, date: val('date') || today(), splitA, tripId: tripId && tripId !== 'none' ? tripId : null };
       if (e) store.update('expenses', e.id, data); else store.add('expenses', data);
       closeSheet();
       toast(e ? 'Saved' : 'Expense added');
@@ -1319,6 +1423,9 @@ app.addEventListener('click', e => {
     case 'quick-focus': app.querySelector('#quick-add input')?.focus(); break;
     case 'settings': settingsForm(); break;
     case 'add-expense': expenseForm(); break;
+    case 'money-filter': moneyFilter = id; localStorage.setItem('ourhome-moneyfilter', id); render(); break;
+    case 'new-trip': tripForm(); break;
+    case 'edit-trip': tripForm((S.trips || []).find(t => t.id === id)); break;
     case 'edit-expense': expenseForm(find('expenses')); break;
     case 'settle': settleForm(); break;
     case 'pay-bill': payBillForm(find('bills')); break;
