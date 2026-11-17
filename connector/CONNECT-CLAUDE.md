@@ -71,13 +71,15 @@ Try: *"What's on our grocery list?"*
 ## What Claude can do
 
 - Add groceries (with quantity and store), tick them off as bought, and show the list
+- Create projects and sub-projects (with budget and deadline)
 - Add things to buy to a project (with price, store, link, priority)
+- Delete grocery items, things to buy, to-dos, and trip places or plan items
 - Add to-dos to a project or trip, tick them off, and list them
 - Add expenses (any currency, any split, to a trip), and show who owes whom
 - Save places and add plans to a trip
 - Give an overview of everything
 
-**Claude can't delete anything.** Deleting is only done in the app.
+Claude can delete items, to-dos and trip places, but not expenses, projects or trips. Those are deleted in the app.
 
 ## Turning it off
 

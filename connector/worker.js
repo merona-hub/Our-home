@@ -9,7 +9,7 @@
 //    BOT_PASSWORD      that login's password            (type: Secret)
 //    CONNECTOR_SECRET  a long random code; part of the link  (type: Secret)
 //
-//  On purpose, Claude can add and tick things off, but never delete.
+//  Claude can add, tick off and delete items, and create projects.
 // =====================================================================
 
 const FIREBASE_API_KEY = 'AIzaSyDcuDZYgdvoYY16cb_EnBIz_l6zHdhIp1s';
@@ -110,6 +110,9 @@ async function update(env, col, id, patch) {
     method: 'PATCH',
     body: JSON.stringify({ fields: enc(data).mapValue.fields }),
   });
+}
+async function remove(env, col, id) {
+  await fsFetch(env, `${homePath}/${col}/${id}`, { method: 'DELETE' });
 }
 async function getSettings(env) {
   const d = await fsFetch(env, `${homePath}/meta/settings`);
@@ -330,6 +333,71 @@ const TOOLS = [
     },
   },
   {
+    name: 'create_project',
+    description: 'Create a project in "To buy" (e.g. "Home", "Wedding"), or a sub-project inside one (e.g. "Living room" inside "Home").',
+    inputSchema: {
+      type: 'object', required: ['name'],
+      properties: {
+        name: str('Name of the new project or sub-project'),
+        parent: str('For a sub-project: the big project it belongs to, e.g. "Home". Leave empty for a big project.'),
+        budget: numb('Budget in the main currency (optional)'), deadline: str('Deadline YYYY-MM-DD (optional)'),
+      },
+    },
+    run: async (env, a) => {
+      const lists = await list(env, 'lists');
+      let parentId = null, parentName = '';
+      if (a.parent) {
+        const n = norm(a.parent);
+        const big = lists.find(l => l.kind === 'project' && !l.parentId && norm(l.name) === n) || lists.find(l => l.kind === 'project' && !l.parentId && norm(l.name).includes(n));
+        if (!big) throw new Error(`No big project called "${a.parent}". Big projects: ${lists.filter(l => l.kind === 'project' && !l.parentId).map(l => l.name).join(', ') || 'none'}`);
+        parentId = big.id; parentName = big.name;
+      }
+      const dup = lists.find(l => l.kind === 'project' && (l.parentId || null) === parentId && norm(l.name) === norm(a.name));
+      if (dup) return `"${dup.name}" already exists${parentName ? ' in ' + parentName : ''}.`;
+      await add(env, 'lists', { name: a.name.trim(), kind: 'project', parentId, budget: +a.budget || null, deadline: a.deadline || null });
+      return parentName ? `Created sub-project "${a.name}" in ${parentName}.` : `Created project "${a.name}".`;
+    },
+  },
+  {
+    name: 'delete_items',
+    description: 'Delete things by name: grocery items, things to buy in a project, to-dos, or a trip\'s places / plan items. If a name matches more than one thing, nothing is deleted and you get the options so you can ask which one.',
+    inputSchema: {
+      type: 'object', required: ['names', 'from'],
+      properties: {
+        names: { type: 'array', items: { type: 'string' }, description: 'Names of the things to delete' },
+        from: str('Where: "groceries", "project" (things to buy), "todos", "trip places" or "trip plan"', { enum: ['groceries', 'project', 'todos', 'trip places', 'trip plan'] }),
+        project: str('Project name, to narrow down things to buy or to-dos (optional)'),
+        trip: str('Trip name, for trip places / plan / to-dos (optional)'),
+      },
+    },
+    run: async (env, a) => {
+      const [items, lists, todos, trips, tripitems] = await Promise.all([list(env, 'items'), list(env, 'lists'), list(env, 'todos'), list(env, 'trips'), list(env, 'tripitems')]);
+      const where = a.from;
+      let pool, col, label;
+      const proj = a.project ? findProject(lists, a.project) : null;
+      const projIds = proj ? [proj.id, ...lists.filter(l => l.parentId === proj.id).map(l => l.id)] : null;
+      const trip = a.trip ? findTrip(trips, a.trip) : null;
+      if (where === 'groceries') { col = 'items'; pool = items.filter(i => i.listId === 'groceries'); label = i => i.name; }
+      else if (where === 'project') { col = 'items'; pool = items.filter(i => i.listId && i.listId !== 'groceries' && (!projIds || projIds.includes(i.listId))); label = i => `${i.name} (${lists.find(l => l.id === i.listId)?.name || '?'})`; }
+      else if (where === 'todos') { col = 'todos'; pool = todos.filter(t => (!projIds || (t.parentType === 'list' && projIds.includes(t.parentId))) && (!trip || (t.parentType === 'trip' && t.parentId === trip.id))); label = t => t.title; }
+      else {
+        const t = trip || findTrip(trips, null);
+        col = 'tripitems'; pool = tripitems.filter(x => x.tripId === t.id && x.kind === (where === 'trip plan' ? 'plan' : 'place')); label = x => x.title;
+      }
+      const nameOf = x => x.name || x.title || '';
+      const done = [], missing = [], unclear = [];
+      for (const nm of a.names) {
+        let m = pool.filter(x => norm(nameOf(x)) === norm(nm));
+        if (!m.length) m = pool.filter(x => norm(nameOf(x)).includes(norm(nm)));
+        if (!m.length) { missing.push(nm); continue; }
+        if (m.length > 1) { unclear.push(`"${nm}" matches: ${m.map(label).join('; ')}`); continue; }
+        await remove(env, col, m[0].id); done.push(label(m[0]));
+      }
+      return [done.length ? 'Deleted: ' + done.join(', ') + '.' : '', missing.length ? 'Not found: ' + missing.join(', ') + '.' : '',
+        unclear.length ? 'Not deleted, more than one match (ask which one, or give the project): ' + unclear.join(' | ') : ''].filter(Boolean).join(' ') || 'Nothing to delete.';
+    },
+  },
+  {
     name: 'add_todo',
     description: 'Add a task to the to-do list of a project or a trip.',
     inputSchema: {
@@ -470,7 +538,7 @@ const TOOLS = [
 // ---------------------------------------------------------------------
 //  MCP (Model Context Protocol) over HTTP
 // ---------------------------------------------------------------------
-const INSTRUCTIONS = 'Our Home is a shared household app for two people. Use these tools to add groceries, things to buy for projects, to-dos, expenses and trip plans. Nothing can be deleted through these tools; deleting is done in the app. When unsure about names of projects or trips, call get_overview first.';
+const INSTRUCTIONS = 'Our Home is a shared household app for two people. Use these tools to add, tick off and delete groceries, things to buy, to-dos and trip plans, create projects and sub-projects, and record expenses. Before deleting, make sure it is what the person asked for. When unsure about names of projects or trips, call get_overview first.';
 
 async function handleRpc(env, msg) {
   const { id, method, params } = msg;
