@@ -310,7 +310,8 @@ function render() {
       </div>
       <button class="gear" data-act="settings" aria-label="Settings"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </header>
-    <main>${banners.join('')}${body}</main>
+    <main class="${selectMode && tab === 'shop' ? 'with-bulk' : ''}">${banners.join('')}${body}</main>
+    ${tab === 'shop' ? bulkBar() : ''}
     <nav class="tabs">
       ${TABS.slice(0, 2).map(tabBtn).join('')}
       <div class="fab-slot"><button class="fab" data-act="${fabAction()}" aria-label="Add">${svg(ICONS.plus, 30)}</button></div>
@@ -957,6 +958,7 @@ function currentList() {
   return S.lists.find(l => l.id === shopView) || null;
 }
 function setShopView(v) {
+  if (v !== shopView) { selectMode = false; selected.clear(); }
   shopView = v;
   if (v) localStorage.setItem('ourhome-shopview', v); else localStorage.removeItem('ourhome-shopview');
   render(); window.scrollTo(0, 0);
@@ -1057,7 +1059,7 @@ function renderBigProject(L) {
     ${subs.length ? `<div class="list">${subs.map(p => { const st = listStats(p.id); return listCard(p.id, 'project', p.name, esc(statsMeta(st, p)), st.total ? st.done / st.total : null); }).join('')}</div>`
       : `<button class="empty-card" data-act="new-sub" data-id="${L.id}">Split it into parts, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}
     ${todoSection('list', L.id)}
-    ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span></div>
+    ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span>${pending.length ? selectToggle(pending.map(i => i.id)) : ''}</div>
       ${pending.length ? `${pending.length > 1 ? groupBar() : ''}${groupedItems(pending)}` : ''}
       ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
         ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}` : ''}`;
@@ -1112,9 +1114,11 @@ function itemRow(i) {
   if (i.link) bits.push('🔗');
   if (i.arrived) bits.push('arrived ' + fmtDate(i.arrivedAt));
   else if (i.eta) bits.push('arrives ' + fmtDate(i.eta));
-  return `<div class="row ${i.arrived ? 'done' : ''}" style="padding:10px 16px">
-    <button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Arrived">${i.arrived ? '✓' : ''}</button>
-    <button class="main" style="text-align:left" data-act="edit-item" data-id="${i.id}">
+  const sel = selectMode && selected.has(i.id);
+  return `<div class="row ${i.arrived ? 'done' : ''} ${sel ? 'selected' : ''}" style="padding:10px 16px">
+    ${selectMode ? `<button class="selbox ${sel ? 'on' : ''}" data-act="sel-item" data-id="${i.id}" aria-label="Select">${sel ? '✓' : ''}</button>`
+      : `<button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Arrived">${i.arrived ? '✓' : ''}</button>`}
+    <button class="main" style="text-align:left" data-act="${selectMode ? 'sel-item' : 'edit-item'}" data-id="${i.id}">
       <div class="title">${i.priority === 'high' && !i.arrived ? '<span class="prio high">High</span>' : ''}${i.priority === 'low' && !i.arrived ? '<span class="prio low">Low</span>' : ''}${esc(i.name)}${(+i.count || 1) > 1 ? ` <span class="qty">×${i.count}</span>` : ''}</div>
       <div class="meta">${ownerTag(i.owner)} ${esc([src.label, ...bits].join(' · '))}</div>
     </button>
@@ -1123,6 +1127,62 @@ function itemRow(i) {
 
 // ---- Group the items of a project: by who, how we're getting it, store, or priority ----
 let groupBy = localStorage.getItem('ourhome-groupby') || 'priority';
+// ---- Bulk editing ----
+let selectMode = false;
+const selected = new Set();
+const selectToggle = ids => selectMode
+  ? `<span class="sel-tools"><button class="link" data-act="sel-all" data-ids="${ids.join(',')}">${ids.every(id => selected.has(id)) ? 'None' : 'All'}</button><button class="link" data-act="sel-done">Done</button></span>`
+  : `<button class="link" data-act="sel-start">Select</button>`;
+function bulkBar() {
+  if (!selectMode) return '';
+  const n = selected.size;
+  const btn = (k, l) => `<button data-act="bulk" data-id="${k}" ${n ? '' : 'disabled'}>${l}</button>`;
+  return `<div class="bulk-bar"><div class="bulk-count">${n ? `${n} selected` : 'Tap items to select them'}</div>
+    <div class="bulk-actions">${btn('who', 'Who')}${btn('source', 'How')}${btn('priority', 'Priority')}${btn('store', 'Store')}${btn('move', 'Move')}${btn('delete', 'Delete')}</div></div>`;
+}
+function bulkForm(kind) {
+  const ids = [...selected];
+  const items = S.items.filter(i => ids.includes(i.id));
+  if (!items.length) return;
+  const n = items.length, what = `${n} item${n > 1 ? 's' : ''}`;
+  const done = msg => { selected.clear(); selectMode = false; closeSheet(); render(); toast(msg); };
+  const apply = patch => { items.forEach(i => store.update('items', i.id, typeof patch === 'function' ? patch(i) : patch)); };
+  if (kind === 'delete') {
+    if (!confirm(`Delete ${what}?`)) return;
+    const backup = items.map(({ id, ...rest }) => [id, rest]);
+    items.forEach(i => store.remove('items', i.id));
+    selected.clear(); selectMode = false; render();
+    return toast(`${what} deleted`, () => backup.forEach(([id, d]) => store.restore('items', id, d)));
+  }
+  const bigs = bigProjects();
+  const moveOpts = bigs.flatMap(b => [{ v: b.id, label: esc(b.name) }, ...subProjects(b.id).map(p => ({ v: p.id, label: esc(b.name + ' › ' + p.name) }))]);
+  const body = {
+    who: [`Who's on it?`, chips('v', [...people(), { v: 'both', label: 'Both' }, { v: 'none', label: 'Undecided' }], '')],
+    source: ['How are we getting it?', chips('v', SOURCES.map(x => ({ v: x.id, label: x.label })), '')],
+    priority: ['Priority', chips('v', PRIORITIES.map(x => ({ v: x.v, label: x.label })), '')],
+    move: ['Move to', chips('v', moveOpts, '')],
+    store: ['Where from?', `<input name="v" list="seller-list" placeholder="e.g. IKEA" autofocus>
+      <datalist id="seller-list">${[...new Set(S.items.map(i => i.seller).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('')}</datalist>`],
+  }[kind];
+  openSheet(`<h3>${what}</h3><div class="field"><span class="lbl">${body[0]}</span>${body[1]}</div>
+    <button class="btn" data-sheet="save">Apply to ${what}</button>`, {
+    save: () => {
+      const v = kind === 'store' ? val('v') : chipVal('v');
+      if (!v) return toast('Choose one first');
+      if (kind === 'who') apply({ owner: v });
+      if (kind === 'source') apply({ source: v });
+      if (kind === 'priority') apply({ priority: v });
+      if (kind === 'move') apply({ listId: v });
+      if (kind === 'store') apply(i => {
+        const opts = (i.options || []).map(o => ({ ...o, chosen: false }));
+        const hit = opts.find(o => (o.where || '').trim().toLowerCase() === v.toLowerCase());
+        if (hit) hit.chosen = true; else opts.push({ id: Math.random().toString(36).slice(2, 8), where: v, link: '', price: i.approx || '', chosen: true });
+        return { seller: v, options: opts, link: (hit && hit.link) || null };
+      });
+      done(`Updated ${what} ✓`);
+    },
+  });
+}
 const GROUPS = [['priority', 'Priority'], ['who', 'Who'], ['source', 'How'], ['store', 'Store']];
 const sortPending = list => list.sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
 function groupBar() {
@@ -1156,7 +1216,7 @@ function renderItemList(L) {
   const st = listStats(L.id);
   const summary = L.kind === 'project' && hasTracker(st, L) ? trackerCard(st, L) : '';
   return `${listHead(L)}${summary}
-    ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${st.approx ? '~' + money(st.approx) : ''}</span></div>
+    ${pending.length ? `<div class="month"><span>Still need (${pending.length})${st.approx ? ` · ~${money(st.approx)}` : ''}</span>${selectToggle(pending.map(i => i.id))}</div>
       ${pending.length > 1 ? groupBar() : ''}${groupedItems(pending)}`
       : `<div class="empty">${items.length ? 'Everything is here 🎉' : 'Nothing here yet.'}<br>Tap <b>+</b> to add something.</div>`}
     ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
@@ -2113,6 +2173,7 @@ app.addEventListener('click', e => {
     case 'tab':
       if (tab === 'shop' && id === 'shop' && shopView) return setShopView(null);   // tapping "To buy" again goes back to the overview
       if (tab === 'travel' && id === 'travel' && travelView) return setTravelView(null);
+      selectMode = false; selected.clear();
       tab = id; localStorage.setItem('ourhome-tab', tab); render(); window.scrollTo(0, 0); break;
     case 'home-view': homeView = id; localStorage.setItem('ourhome-homeview', id); render(); break;
     case 'open-trip': tripSeg = 'money'; localStorage.setItem('ourhome-tripseg', tripSeg); setTravelView(id); break;
@@ -2123,6 +2184,11 @@ app.addEventListener('click', e => {
     case 'edit-place': placeForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'toggle-place': { const pl = S.tripitems.find(x => x.id === id); store.update('tripitems', id, { done: !pl.done }); break; }
     case 'add-booking': bookingForm(currentTrip()); break;
+    case 'sel-start': selectMode = true; selected.clear(); render(); break;
+    case 'sel-done': selectMode = false; selected.clear(); render(); break;
+    case 'sel-item': selected.has(id) ? selected.delete(id) : selected.add(id); render(); break;
+    case 'sel-all': { const ids = el.dataset.ids.split(','); const all = ids.every(x => selected.has(x)); ids.forEach(x => all ? selected.delete(x) : selected.add(x)); render(); break; }
+    case 'bulk': bulkForm(id); break;
     case 'group-by': groupBy = id; localStorage.setItem('ourhome-groupby', id); render(); break;
     case 'qty-plus': case 'qty-minus': {
       const it = S.items.find(x => x.id === id); const n = (+it.count || 1) + (el.dataset.act === 'qty-plus' ? 1 : -1);

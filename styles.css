@@ -460,3 +460,18 @@ header .hname i { width: 8px; height: 8px; border-radius: 50%; display: inline-b
 .month.sub .ptag { font-size: 14px; }
 .swatches[data-person] { margin-top: 10px; gap: 8px; }
 .swatches[data-person] button { width: 34px; height: 34px; }
+
+/* ---------- Bulk editing ---------- */
+.sel-tools { display: flex; gap: 14px; }
+.month .link { font-size: 15px; padding: 0; }
+.selbox { width: 30px; height: 30px; border-radius: 9px; flex: none; border: 2.5px solid var(--neutral); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 16px; }
+.selbox.on { background: var(--c); border-color: var(--c); }
+.row.selected { background: var(--c-soft); }
+.bulk-bar { position: fixed; left: 10px; right: 10px; bottom: calc(84px + var(--safe-b)); z-index: 7; max-width: 560px; margin: 0 auto;
+  background: var(--text); color: #fff; border-radius: 20px; padding: 10px 12px 12px; box-shadow: 0 8px 24px #343A3440; }
+.bulk-count { font-size: 14px; font-weight: 700; opacity: .85; margin: 0 4px 8px; }
+.bulk-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bulk-actions button { min-height: 40px; border-radius: 12px; background: #ffffff1f; color: #fff; font-weight: 700; font-size: 15px; }
+.bulk-actions button:last-child { background: #B65D59; }
+.bulk-actions button:disabled { opacity: .35; }
+main.with-bulk { padding-bottom: calc(250px + var(--safe-b)); }
