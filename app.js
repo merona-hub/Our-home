@@ -182,6 +182,7 @@ let tripSeg = localStorage.getItem('ourhome-tripseg') || 'money';             //
 let showArrived = false;
 let shopView = localStorage.getItem('ourhome-shopview') || null;   // null = overview, 'home', or a list id
 const app = document.getElementById('app');
+const LOADER = document.querySelector('#app .loader')?.outerHTML || '<div class="loader"></div>';
 const sheet = document.getElementById('sheet');
 
 // ================================================================
@@ -407,11 +408,11 @@ function renderTravel() {
     ${trips.length ? `<div class="list">${trips.map(t => {
       const spent = tripSpent(t), budget = +t.budget || 0;
       const meta = [fmtRange(t.start, t.end), status(t), budget ? `${money(spent)} of ${money(budget)}` : (spent ? money(spent) + ' spent' : '')].filter(Boolean).join(' · ');
-      return `<button class="list-card" data-act="open-trip" data-id="${t.id}">
+      return swipeable('trips', t.id, `<button class="list-card" data-act="open-trip" data-id="${t.id}">
         <span class="ico">${svg(ICONS.travel)}</span>
         <span class="main"><div class="title">${esc(t.name)}</div><div class="meta">${esc(meta)}</div>
           ${budget ? `<div class="bar ${spent > budget ? 'over' : ''}"><span style="width:${Math.min(100, Math.round(spent / budget * 100))}%"></span></div>` : ''}</span>
-        <span class="chev">${svg(ICONS.chevron, 20)}</span></button>`;
+        <span class="chev">${svg(ICONS.chevron, 20)}</span></button>`);
     }).join('')}</div>`
     : `<button class="empty-card" data-act="new-trip">Plan a trip with its dates, local currency and a budget. Expenses you add during the trip go into it automatically, and still count in the shared balance.<br><b>Tap to plan one</b></button>`}`;
 }
@@ -542,8 +543,7 @@ function bookingFields(type, x) {
   const pair = (a, b) => `<div class="split2">${a}${b}</div>`;
   if (type === 'flight') return `
     <div class="field"><label>Flight number</label>
-      <div class="amt-row"><input name="flightNo" value="${esc(x.flightNo || '')}" placeholder="e.g. LY91" autocapitalize="characters"><button type="button" class="btn small" data-sheet="lookup">Look up</button></div>
-      <div class="hint" id="flight-hint">${S.settings.flightKey ? 'Type the number and the date, then tap Look up.' : 'Fill in by hand, or add a flight-data key in ⚙️ Settings to fill this in automatically.'}</div></div>
+      <input name="flightNo" value="${esc(x.flightNo || '')}" placeholder="e.g. LY91" autocapitalize="characters"></div>
     ${f('airline', 'Airline (optional)', 'text', 'e.g. El Al')}
     ${pair(f('from', 'From', 'text', 'e.g. TLV'), f('to', 'To', 'text', 'e.g. NRT'))}
     ${pair(f('date', 'Takeoff date', 'date'), f('time', 'Takeoff time', 'time'))}
@@ -573,36 +573,6 @@ function bookingMeta(b) {
   return [b.date ? fmtDate(b.date) + (b.endDate ? ' – ' + fmtDate(b.endDate) : '') : 'No date', b.time, b.place, b.code ? '#' + b.code : ''];
 }
 
-// Flight details from the flight number (AeroDataBox, needs a free key in Settings)
-async function lookupFlight() {
-  const hint = sheet.querySelector('#flight-hint');
-  const key = S.settings.flightKey;
-  const no = (val('flightNo') || '').replace(/\s+/g, '').toUpperCase();
-  const date = val('date');
-  if (!key) { hint.innerHTML = 'Automatic lookup needs a free flight-data key. Add it in <b>⚙️ Settings → Flight lookup</b>.'; return; }
-  if (!no || !date) { hint.textContent = 'Type the flight number and the takeoff date first.'; return; }
-  hint.textContent = 'Looking up…';
-  try {
-    const r = await fetch(`https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(no)}/${date}?withAircraftImage=false&withLocation=false`,
-      { headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' } });
-    if (r.status === 204 || r.status === 404) { hint.textContent = 'No flight found with that number on that date.'; return; }
-    if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'the key was not accepted' : 'error ' + r.status);
-    const list = await r.json();
-    const fl = Array.isArray(list) ? list[0] : list;
-    if (!fl) { hint.textContent = 'No flight found with that number on that date.'; return; }
-    const local = x => (x && (x.scheduledTime?.local || x.scheduledTimeLocal || x.revisedTime?.local)) || '';
-    const dep = local(fl.departure), arr = local(fl.arrival);
-    const set = (n, v) => { const el = sheet.querySelector(`[name="${n}"]`); if (el && v) el.value = v; };
-    set('airline', fl.airline?.name);
-    set('from', fl.departure?.airport?.iata || fl.departure?.airport?.name);
-    set('to', fl.arrival?.airport?.iata || fl.arrival?.airport?.name);
-    set('date', dep.slice(0, 10)); set('time', dep.slice(11, 16));
-    set('endDate', arr.slice(0, 10)); set('endTime', arr.slice(11, 16));
-    const cities = [fl.departure?.airport?.municipalityName, fl.arrival?.airport?.municipalityName].filter(Boolean).join(' → ');
-    hint.textContent = `Found ✓ ${fl.airline?.name || ''} ${cities}`.trim();
-  } catch (err) { hint.textContent = "Couldn't look it up (" + (err.message || err) + '). You can fill it in by hand.'; }
-}
-
 function bookingForm(t, b = null) {
   const x = b || { type: 'flight', date: t.start || '' };
   const linked = b && b.expenseId && S.expenses.find(e => e.id === b.expenseId);
@@ -629,7 +599,6 @@ function bookingForm(t, b = null) {
       sheet.querySelector('#bfields').innerHTML = bookingFields(v, { ...x, ...keep });
       cur = v;
     },
-    lookup: () => lookupFlight(),
     save: async () => {
       const type = chipVal('btype');
       const g = n => val(n) || null;
@@ -1292,7 +1261,7 @@ viewer.addEventListener('click', e => {
 });
 async function openFile(f) {
   viewer.classList.remove('hidden');
-  viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>${esc(f.name)}</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div><div class="empty">Loading…</div></div>`;
+  viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>${esc(f.name)}</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div>${LOADER}</div>`;
   try {
     const dataUrl = fileCache[f.id] || (fileCache[f.id] = await store.getFile(f.id));
     if (!dataUrl) throw new Error('file not found');
@@ -1548,6 +1517,24 @@ function swipeDelete(col, id) {
   const obj = S[col].find(x => x.id === id);
   if (!obj) return;
   const { id: _, ...data } = obj;
+  if (col === 'trips') {
+    // a trip takes its plan, places, bookings, saved posts and to-dos with it; its expenses stay (untagged)
+    const strip = x => { const { id: _i, ...rest } = x; return rest; };
+    const items = (S.tripitems || []).filter(x => x.tripId === id);
+    const todos = (S.todos || []).filter(x => x.parentType === 'trip' && x.parentId === id);
+    const exps = S.expenses.filter(e => e.tripId === id);
+    items.forEach(x => store.remove('tripitems', x.id));
+    todos.forEach(x => store.remove('todos', x.id));
+    exps.forEach(e => store.update('expenses', e.id, { tripId: null }));
+    store.remove('trips', id);
+    toast(`“${obj.name}” deleted`, () => {
+      store.restore('trips', id, data);
+      items.forEach(x => store.restore('tripitems', x.id, strip(x)));
+      todos.forEach(x => store.restore('todos', x.id, strip(x)));
+      exps.forEach(e => store.update('expenses', e.id, { tripId: id }));
+    });
+    return;
+  }
   if (col === 'expenses') {
     deleteExpense(obj);
     toast('Expense deleted', () => {
@@ -1987,7 +1974,7 @@ function settingsForm() {
         names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
         pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
         currency: newCur,
-        flightKey: (sheet.querySelector('[name=flightKey]')?.value || '').trim() || null,
+        flightKey: null,
       });
       const d = chipVal('device'); if (d) localStorage.setItem('ourhome-device', d);
       closeSheet(); toast('Saved');
@@ -2000,19 +1987,6 @@ function settingsForm() {
       a.click();
     },
     signout: () => { if (confirm('Sign out?')) { closeSheet(); store.signOut(); } },
-    'flight-help': () => {
-      viewer.classList.remove('hidden');
-      viewer.innerHTML = `<div class="viewer-box"><div class="viewer-top"><b>Free flight lookup key</b><button class="icon-btn" data-close-viewer>${svg(ICONS.close, 22)}</button></div>
-        <ol class="steps">
-          <li>Go to <b>rapidapi.com</b> and sign up (free; Google sign-in works).</li>
-          <li>Search for <b>AeroDataBox</b> and open it.</li>
-          <li>Tap <b>Pricing</b> → choose the free <b>Basic</b> plan → <b>Subscribe</b>. No card needed.</li>
-          <li>Go back to the AeroDataBox page → <b>Endpoints</b>. On the right you'll see <b>X-RapidAPI-Key</b> followed by a long code. Copy that code.</li>
-          <li>Paste it here in Settings → Flight lookup key → Save.</li>
-        </ol>
-        <p style="color:var(--muted)">The free plan allows a few hundred lookups a month, plenty for your trips. The key is saved only in your shared home data.</p>
-        <button class="btn light" data-close-viewer>Got it</button></div>`;
-    },
   };
 
   openSheet(`
@@ -2024,9 +1998,6 @@ function settingsForm() {
     </div>
     <div class="field"><span class="lbl">This phone belongs to</span>${chips('device', people(), device() || '')}
       <div class="hint">Used to color the balance: green when you're owed, red when you owe.</div></div>
-    <div class="field"><label>Flight lookup key (optional)</label>
-      <input name="flightKey" value="${esc(S.settings.flightKey || '')}" placeholder="Paste your AeroDataBox key" autocomplete="off" autocapitalize="off">
-      <div class="hint">Fills in flight details from the flight number. <button type="button" class="link" data-sheet="flight-help" style="padding:0;font-size:13px">How to get a free key</button></div></div>
     <div class="field"><label>Main currency</label><div class="select-wrap"><select name="currency" class="plain-select">
       ${CURRENCIES.map(c => `<option value="${c.v}" ${c.v === (c0.currency || 'ILS') ? 'selected' : ''}>${c.label}</option>`).join('')}
     </select></div></div>
@@ -2294,7 +2265,7 @@ store.onChange((snap, err) => {
 
 store.init(user => {
   if (!user) { S = null; closeSheet(); renderLogin(); }
-  else app.innerHTML = '<div class="loading">Loading your home…</div>';
+  else app.innerHTML = LOADER;
 }).catch(err => {
   app.innerHTML = `<div class="login"><h1>Can't connect</h1><p>${esc(err.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`;
 });

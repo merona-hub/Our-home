@@ -19,7 +19,17 @@
 </head>
 <body>
   <div id="app">
-    <div class="loading">Loading…</div>
+    <div class="loader" role="status" aria-label="Loading">
+      <svg viewBox="0 0 48 64" width="46" height="62" aria-hidden="true">
+        <g class="glass">
+          <path d="M8 4h32M8 60h32" stroke="#455B48" stroke-width="4" stroke-linecap="round"/>
+          <path d="M12 6c0 14 12 18 12 26S12 44 12 58h24c0-14-12-18-12-26S36 20 36 6Z" fill="none" stroke="#455B48" stroke-width="3" stroke-linejoin="round"/>
+          <path class="sand-top" d="M15 11h18c-1 7-6 11-9 14-3-3-8-7-9-14Z" fill="#B97970"/>
+          <path class="sand-bottom" d="M15 55h18c-2-5-5-8-9-9-4 1-7 4-9 9Z" fill="#B97970"/>
+          <path class="sand-drop" d="M24 30v16" stroke="#B97970" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
   </div>
   <div id="sheet-backdrop" class="hidden"></div>
   <div id="sheet" class="hidden" role="dialog" aria-modal="true"></div>

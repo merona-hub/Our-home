@@ -37,7 +37,17 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
 .hidden { display: none !important; }
-.loading { padding: 40vh 0; text-align: center; color: var(--muted); }
+.loader { min-height: 70vh; display: grid; place-items: center; }
+.loader svg { overflow: visible; }
+.viewer-box .loader { min-height: 30vh; }
+.loader .glass { transform-origin: 24px 32px; animation: flip 2.4s ease-in-out infinite; }
+.loader .sand-top { transform-origin: 24px 25px; animation: drain 2.4s linear infinite; }
+.loader .sand-bottom { transform-origin: 24px 55px; animation: fill 2.4s linear infinite; }
+.loader .sand-drop { animation: drop 2.4s linear infinite; }
+@keyframes flip { 0%, 80% { transform: rotate(0); } 100% { transform: rotate(180deg); } }
+@keyframes drain { 0% { transform: scale(1); } 75%, 100% { transform: scale(0); } }
+@keyframes fill { 0% { transform: scale(0); } 75%, 100% { transform: scale(1); } }
+@keyframes drop { 0%, 72% { opacity: 1; } 76%, 100% { opacity: 0; } }
 
 /* ---------- Header ---------- */
 header {
