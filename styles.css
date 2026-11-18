@@ -441,3 +441,22 @@ code { background: var(--bg); padding: 2px 6px; border-radius: 6px; font-size: 1
 .opt-top .opt-price { width: 90px; flex: none; }
 .opt-actions { display: flex; justify-content: space-between; margin-top: 4px; }
 .opt-actions .link { font-size: 15px; text-decoration: none; }
+
+/* ---------- Person color tags ---------- */
+.ptag { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 6px; border-radius: 999px; font-weight: 700; font-size: 13px; color: var(--text); background: color-mix(in srgb, var(--pc) 22%, white); margin-right: 4px; vertical-align: 1px; }
+.ptag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pc); }
+.ptag.none { background: var(--line); color: var(--muted); }
+.ptag.none::before { display: none; }
+header .hname { display: inline-flex; align-items: center; gap: 5px; }
+header .hname i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1.5px #ffffff66; }
+
+/* ---------- Group by ---------- */
+.group-bar { display: flex; align-items: center; gap: 6px; margin: 0 2px 10px; font-size: 14px; color: var(--muted); font-weight: 700; flex-wrap: wrap; }
+.group-bar span { margin-right: 2px; }
+.group-bar button { min-height: 34px; padding: 0 12px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--line); font-weight: 700; font-size: 14px; color: var(--text); }
+.group-bar button.on { background: var(--c); border-color: var(--c); color: #fff; }
+.month.sub { margin-top: 14px; font-size: 14px; }
+.month.sub small { font-weight: 600; color: var(--neutral); margin-left: 4px; }
+.month.sub .ptag { font-size: 14px; }
+.swatches[data-person] { margin-top: 10px; gap: 8px; }
+.swatches[data-person] button { width: 34px; height: 34px; }

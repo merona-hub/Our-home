@@ -215,6 +215,11 @@ const nm = p => cfg().names[p] || p;
 const device = () => localStorage.getItem('ourhome-device');            // which person uses this phone
 const defPayer = () => device() || defPayer();
 const ownerLabel = o => o === 'both' ? 'Both' : (!o || o === 'none') ? 'Undecided' : nm(o);
+// Each person's color (set in Settings); names show as small colored tags
+const PERSON_COLORS = ['#B97970', '#5A7A9A', '#C49A58', '#527A5B', '#8A6F9E', '#B65D59', '#82947D', '#455B48'];
+const pColor = p => ((S && S.settings && S.settings.colors) || {})[p] || (p === 'a' ? '#B97970' : '#5A7A9A');
+const tag = p => `<span class="ptag" style="--pc:${pColor(p)}">${esc(nm(p))}</span>`;
+const ownerTag = o => o === 'a' || o === 'b' ? tag(o) : o === 'both' ? `${tag('a')}${tag('b')}` : `<span class="ptag none">Undecided</span>`;
 const cat = id => CATEGORIES.find(c => c.id === id) || TRIP_CATEGORIES.find(c => c.id === id) || CATEGORIES[3];
 
 function toast(msg, undo = null) {
@@ -301,7 +306,7 @@ function render() {
     <header>
       <div>
         <h1>${esc(c.houseName)}</h1>
-        <div class="who"><span>${esc(c.names.a)}</span><span>${esc(c.names.b)}</span>${c.pets.map(p => `<span class="pet">${petArt(p.type, 16)}${esc(p.name)}</span>`).join('')}</div>
+        <div class="who"><span class="hname"><i style="background:${pColor('a')}"></i>${esc(c.names.a)}</span><span class="hname"><i style="background:${pColor('b')}"></i>${esc(c.names.b)}</span>${c.pets.map(p => `<span class="pet">${petArt(p.type, 16)}${esc(p.name)}</span>`).join('')}</div>
       </div>
       <button class="gear" data-act="settings" aria-label="Settings"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </header>
@@ -860,7 +865,7 @@ function expenseRow(e) {
   return `<button class="row" data-act="edit-expense" data-id="${e.id}">
     <span class="ico">${c.icon}</span>
     <span class="main"><div class="title">${esc(e.note || c.label)}</div>
-      <div class="meta">${e.tripId && tab !== 'travel' && S.trips?.find(t => t.id === e.tripId) ? '✈️ ' + esc(S.trips.find(t => t.id === e.tripId).name) + ' · ' : ''}${esc(nm(e.paidBy))} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
+      <div class="meta">${e.tripId && tab !== 'travel' && S.trips?.find(t => t.id === e.tripId) ? '✈️ ' + esc(S.trips.find(t => t.id === e.tripId).name) + ' · ' : ''}${tag(e.paidBy)} paid · ${fmtDate(e.date)} · ${esc(splitLabel(e))}${e.origCurrency ? ' · ' + esc(fmtIn(e.origAmount, e.origCurrency)) : ''}</div></span>
     <span class="amt">${money(e.amount)}</span></button>`;
 }
 
@@ -888,7 +893,7 @@ function renderBills() {
         <span class="main" style="min-width:0">
           <div class="title" style="font-weight:600">${esc(b.name)}</div>
           <div class="meta" style="font-size:14px;color:var(--muted)">
-            ${b.amount ? '~' + money(b.amount) + ' · ' : ''}${esc(FREQS.find(f => f.v === +b.freq)?.label || '')} · ${b.owner === 'shared' ? 'shared' : esc(nm(b.owner))}
+            ${b.amount ? '~' + money(b.amount) + ' · ' : ''}${esc(FREQS.find(f => f.v === +b.freq)?.label || '')} · ${b.owner === 'shared' ? 'shared' : tag(b.owner)}
           </div>
           <span class="pill ${s.state === 'paid' ? 'ok' : s.late ? 'late' : s.state === 'due' ? 'due' : ''}">${esc(s.label)}</span>
         </span>
@@ -1016,7 +1021,7 @@ function todoSection(type, id, withHeader = true) {
   const row = t => `<div class="row ${t.done ? 'done' : ''}" style="padding:8px 16px;min-height:56px">
       <button class="check ${t.done ? 'on' : ''}" data-act="toggle-todo" data-id="${t.id}" aria-label="Done">${t.done ? '✓' : ''}</button>
       <button class="main" style="text-align:left" data-act="edit-todo" data-id="${t.id}"><div class="title">${esc(t.title)}</div>
-        ${t.due || (t.owner && t.owner !== 'none') ? `<div class="meta">${esc([t.owner && t.owner !== 'none' ? ownerLabel(t.owner) : '', t.due ? 'by ' + fmtDate(t.due) : ''].filter(Boolean).join(' · '))}</div>` : ''}</button></div>`;
+        ${t.due || (t.owner && t.owner !== 'none') ? `<div class="meta">${t.owner && t.owner !== 'none' ? ownerTag(t.owner) + ' ' : ''}${t.due ? 'by ' + fmtDate(t.due) : ''}</div>` : ''}</button></div>`;
   return `${withHeader ? `<div class="month"><span>To-do${open.length ? ` (${open.length})` : ''}</span></div>` : ''}
     <form class="quick-add todo-add" id="todo-add" data-keep data-type="${type}" data-id="${id}" autocomplete="off">
       <input name="t" placeholder="Add a task, e.g. Measure the wall" enterkeyhint="done">
@@ -1053,7 +1058,7 @@ function renderBigProject(L) {
       : `<button class="empty-card" data-act="new-sub" data-id="${L.id}">Split it into parts, like <i>“Living room”</i>, <i>“Kitchen”</i> or <i>“Balcony”</i>.<br><b>Tap to add one</b></button>`}
     ${todoSection('list', L.id)}
     ${pending.length || arrived.length ? `<div class="month"><span>Other items${pending.length ? ` (${pending.length})` : ''}</span></div>
-      ${pending.length ? `<div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}
+      ${pending.length ? `${pending.length > 1 ? groupBar() : ''}${groupedItems(pending)}` : ''}
       ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
         ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}` : ''}`;
 }
@@ -1098,7 +1103,7 @@ function listHead(L) {
 
 function itemRow(i) {
   const src = SOURCES.find(s => s.id === i.source) || SOURCES[0];
-  const bits = [src.label, ownerLabel(i.owner)];
+  const bits = [];
   const opts = (i.options || []).length;
   if (opts > 1) bits.push(`${opts} options`);
   if ((i.files || []).length) bits.push('📷 ' + i.files.length);
@@ -1111,9 +1116,37 @@ function itemRow(i) {
     <button class="check ${i.arrived ? 'on' : ''}" data-act="toggle-item" data-id="${i.id}" aria-label="Arrived">${i.arrived ? '✓' : ''}</button>
     <button class="main" style="text-align:left" data-act="edit-item" data-id="${i.id}">
       <div class="title">${i.priority === 'high' && !i.arrived ? '<span class="prio high">High</span>' : ''}${i.priority === 'low' && !i.arrived ? '<span class="prio low">Low</span>' : ''}${esc(i.name)}${(+i.count || 1) > 1 ? ` <span class="qty">×${i.count}</span>` : ''}</div>
-      <div class="meta">${esc(bits.join(' · '))}</div>
+      <div class="meta">${ownerTag(i.owner)} ${esc([src.label, ...bits].join(' · '))}</div>
     </button>
   </div>`;
+}
+
+// ---- Group the items of a project: by who, how we're getting it, store, or priority ----
+let groupBy = localStorage.getItem('ourhome-groupby') || 'priority';
+const GROUPS = [['priority', 'Priority'], ['who', 'Who'], ['source', 'How'], ['store', 'Store']];
+const sortPending = list => list.sort((x, y) => prioRank(x.priority) - prioRank(y.priority) || (x.eta || '9999').localeCompare(y.eta || '9999') || (x.createdAt || 0) - (y.createdAt || 0));
+function groupBar() {
+  return `<div class="group-bar"><span>Group by</span>${GROUPS.map(([k, l]) => `<button class="${groupBy === k ? 'on' : ''}" data-act="group-by" data-id="${k}">${l}</button>`).join('')}</div>`;
+}
+function groupedItems(pending) {
+  const row = i => swipeable('items', i.id, itemRow(i));
+  if (groupBy === 'priority') return `<div class="list">${sortPending(pending).map(row).join('')}</div>`;
+  const keyOf = i => groupBy === 'who' ? (i.owner || 'none')
+    : groupBy === 'source' ? (i.source || 'buy')
+    : (i.seller || '').trim().toLowerCase() || '~';
+  const groups = new Map();
+  for (const i of pending) { const k = keyOf(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+  const order = groupBy === 'who' ? ['a', 'b', 'both', 'none'] : groupBy === 'source' ? SOURCES.map(x => x.id) : null;
+  const keys = [...groups.keys()].sort((x, y) => order ? order.indexOf(x) - order.indexOf(y) : (x === '~') - (y === '~') || x.localeCompare(y));
+  const title = (k, list) => groupBy === 'who' ? (k === 'a' || k === 'b' ? tag(k) : k === 'both' ? 'Both' : 'Undecided')
+    : groupBy === 'source' ? esc((SOURCES.find(x => x.id === k) || SOURCES[0]).label)
+    : k === '~' ? 'No store yet' : esc(list[0].seller.trim());
+  return keys.map(k => {
+    const list = sortPending(groups.get(k));
+    const sum = list.reduce((x, i) => x + (+i.approx || 0) * (+i.count || 1), 0);
+    return `<div class="month sub"><span>${title(k, list)} <small>${list.length}</small></span><span>${sum ? '~' + money(sum) : ''}</span></div>
+      <div class="list">${list.map(row).join('')}</div>`;
+  }).join('');
 }
 
 function renderItemList(L) {
@@ -1124,7 +1157,7 @@ function renderItemList(L) {
   const summary = L.kind === 'project' && hasTracker(st, L) ? trackerCard(st, L) : '';
   return `${listHead(L)}${summary}
     ${pending.length ? `<div class="month"><span>Still need (${pending.length})</span><span>${st.approx ? '~' + money(st.approx) : ''}</span></div>
-      <div class="list">${pending.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>`
+      ${pending.length > 1 ? groupBar() : ''}${groupedItems(pending)}`
       : `<div class="empty">${items.length ? 'Everything is here 🎉' : 'Nothing here yet.'}<br>Tap <b>+</b> to add something.</div>`}
     ${arrived.length ? `<div class="month"><button class="link" data-act="toggle-arrived">${showArrived ? '▾' : '▸'} Arrived (${arrived.length})</button></div>
       ${showArrived ? `<div class="list">${arrived.map(i => swipeable('items', i.id, itemRow(i))).join('')}</div>` : ''}` : ''}
@@ -1386,6 +1419,11 @@ sheet.addEventListener('click', e => {
   }
 });
 sheet.addEventListener('submit', e => e.preventDefault());
+sheet.addEventListener('click', e => {
+  const sw = e.target.closest('.swatches[data-person] button'); if (!sw) return;
+  sw.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  sw.classList.add('on');
+});
 sheet.addEventListener('click', e => {
   const b = e.target.closest('[data-step]'); if (!b) return;
   const inp = b.parentElement.querySelector('input');
@@ -1972,6 +2010,7 @@ function settingsForm() {
       store.setSettings({
         houseName: val('houseName') || DEFAULTS.houseName,
         names: { a: val('nameA') || 'Person 1', b: val('nameB') || 'Person 2' },
+        colors: { a: sheet.querySelector('.swatches[data-person=a] .on')?.dataset.color || pColor('a'), b: sheet.querySelector('.swatches[data-person=b] .on')?.dataset.color || pColor('b') },
         pets: pets.filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), type: p.type })),
         currency: newCur,
         flightKey: null,
@@ -1992,10 +2031,9 @@ function settingsForm() {
   openSheet(`
     <h3>Settings</h3>
     <div class="field"><label>Home name</label><input name="houseName" value="${esc(c.houseName)}"></div>
-    <div class="split2">
-      <div class="field"><label>Person 1</label><input name="nameA" value="${esc(c.names.a)}"></div>
-      <div class="field"><label>Person 2</label><input name="nameB" value="${esc(c.names.b)}"></div>
-    </div>
+    ${['a', 'b'].map((p, k) => `<div class="field"><label>Person ${k + 1}</label>
+      <input name="name${p.toUpperCase()}" value="${esc(c.names[p])}">
+      <div class="swatches" data-person="${p}">${PERSON_COLORS.map(col => `<button type="button" data-color="${col}" class="${col === pColor(p) ? 'on' : ''}" style="background:${col}" aria-label="Color"></button>`).join('')}</div></div>`).join('')}
     <div class="field"><span class="lbl">This phone belongs to</span>${chips('device', people(), device() || '')}
       <div class="hint">Used to color the balance: green when you're owed, red when you owe.</div></div>
     <div class="field"><label>Main currency</label><div class="select-wrap"><select name="currency" class="plain-select">
@@ -2085,6 +2123,7 @@ app.addEventListener('click', e => {
     case 'edit-place': placeForm(currentTrip(), S.tripitems.find(x => x.id === id)); break;
     case 'toggle-place': { const pl = S.tripitems.find(x => x.id === id); store.update('tripitems', id, { done: !pl.done }); break; }
     case 'add-booking': bookingForm(currentTrip()); break;
+    case 'group-by': groupBy = id; localStorage.setItem('ourhome-groupby', id); render(); break;
     case 'qty-plus': case 'qty-minus': {
       const it = S.items.find(x => x.id === id); const n = (+it.count || 1) + (el.dataset.act === 'qty-plus' ? 1 : -1);
       if (n >= 1) store.update('items', id, { count: n }); break; }
